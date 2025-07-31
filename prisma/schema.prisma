@@ -25,7 +25,7 @@ model User {
 
 model Role {
   id          Int       @id @default(autoincrement())
-  name        String    @unique // e.g., "OMC_ADMIN", "STATION_MANAGER", "PUMP_ATTENDANT", "DRIVER"
+  name        String    @unique
   users       User[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -33,13 +33,19 @@ model Role {
 }
 
 model Omc {
-  id          Int       @id @default(autoincrement())
-  name        String
-  stations    Station[]
-  users       User[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  id             Int       @id @default(autoincrement())
+  name           String
+  location       String?
+  logo           String?   // Stores file path or URL for JPG, JPEG, PNG
+  contactPerson  String?
+  contact        String?
+  email          String?
+  products       Json?      // Stores array of { name: string, price: float }
+  stations       Station[]
+  users          User[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 }
 
 model Station {

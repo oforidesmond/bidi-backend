@@ -51,8 +51,10 @@ model Omc {
 model Station {
   id            Int          @id @default(autoincrement())
   name          String
-  code          String       @unique
-  location      String
+  pumpNo       String?       @unique
+  region      String?
+  district     String?
+  town        String?
   managerName   String?
   managerContact String?
   omc           Omc          @relation(fields: [omcId], references: [id])

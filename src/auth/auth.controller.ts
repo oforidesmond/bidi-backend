@@ -51,25 +51,23 @@ export class AuthController {
     @Body() body: { 
       name: string; 
       omcId: number; 
-      pumpNo?: string; 
       region?: string; 
       district?: string; 
       town?: string; 
       managerName?: string; 
-      managerContact?: string 
-      products?: string[];
+      managerContact?: string;
+      pumps?: { productName: string; pumpNumber: string }[];
     },
   ) {
     return this.authService.createStation(
       body.name,
       body.omcId,
-      body.pumpNo,
       body.region,
       body.district,
       body.town,
       body.managerName,
       body.managerContact,
-      body.products
+      body.pumps
     );
   }
 

@@ -59,12 +59,25 @@ model Station {
   managerContact String?
   omc           Omc          @relation(fields: [omcId], references: [id])
   omcId         Int
-  products      Product[]
+  pumps         Pump[]
   users         User[]
   transactions  Transaction[]
+  products      Product[]    
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
+}
+
+model Pump {
+  id          Int       @id @default(autoincrement())
+  pumpNumber  String    @unique
+  product     Product   @relation(fields: [productId], references: [id])
+  productId   Int
+  station     Station   @relation(fields: [stationId], references: [id])
+  stationId   Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 }
 
 model Product {
@@ -74,6 +87,7 @@ model Product {
   amount      Float
   station     Station   @relation(fields: [stationId], references: [id])
   stationId   Int
+  pumps       Pump[]
   transactions Transaction[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

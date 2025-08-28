@@ -54,47 +54,51 @@ async function main() {
     }
   }
 
-  // Seed Stations
-  const stations = [
-    {
-      name: 'Station A',
-      code: 'STA001',
-      location: 'Accra',
-      managerName: 'John Doe',
-      managerContact: '1234567890',
-      omcId: createdOmcs[0].id,
-    },
-    {
-      name: 'Station B',
-      code: 'STA002',
-      location: 'Kumasi',
-      managerName: 'Jane Smith',
-      managerContact: '0987654321',
-      omcId: createdOmcs[1].id,
-    },
-  ];
+// Seed Stations
+const stations = [
+  {
+    name: 'Station A',
+    pumpNo: 'PUMP001', // was 'code'
+    region: 'Greater Accra', // replaced 'location'
+    district: 'Accra Metropolitan',
+    town: 'Accra',
+    managerName: 'John Doe',
+    managerContact: '1234567890',
+    omcId: createdOmcs[0].id,
+  },
+  {
+    name: 'Station B',
+    pumpNo: 'PUMP002',
+    region: 'Ashanti',
+    district: 'Kumasi Metropolitan',
+    town: 'Kumasi',
+    managerName: 'Jane Smith',
+    managerContact: '0987654321',
+    omcId: createdOmcs[1].id,
+  },
+];
 
-  const createdStations = [];
-  for (const station of stations) {
-    const existingStation = await prisma.station.findUnique({
-      where: { code: station.code },
+const createdStations = [];
+for (const station of stations) {
+  const existingStation = await prisma.station.findUnique({
+    where: { pumpNo: station.pumpNo }, // use pumpNo since it's unique
+  });
+  if (!existingStation) {
+    const newStation = await prisma.station.create({
+      data: station,
     });
-    if (!existingStation) {
-      const newStation = await prisma.station.create({
-        data: station,
-      });
-      createdStations.push(newStation);
-      console.log(`Created station: ${newStation.name}`);
-    } else {
-      createdStations.push(existingStation);
-      console.log(`Station already exists: ${existingStation.name}`);
-    }
+    createdStations.push(newStation);
+    console.log(`Created station: ${newStation.name}`);
+  } else {
+    createdStations.push(existingStation);
+    console.log(`Station already exists: ${existingStation.name}`);
   }
+}
 
   // Seed Users
   const users = [
     {
-      email: 'omc_admin@example.com',
+      email: 'admin@example.com',
       password: await bcrypt.hash('password123', 10),
       roleId: createdRoles.find((r) => r.name === 'OMC_ADMIN').id,
       omcId: createdOmcs[0].id,

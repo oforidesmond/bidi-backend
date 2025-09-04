@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Request, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Request, Get, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles-guard';
@@ -15,6 +15,12 @@ export class AuthController {
   async login(@Body() body: { email: string; password: string }) {
     return this.authService.login(body.email, body.password);
   }
+
+  @Get('validate')
+@UseGuards(JwtAuthGuard)
+async validate(@Req() req) {
+  return { success: true, user: req.user };
+}
 // Register OMC with validation for logo and products
  @Post('register')
   @UseGuards(JwtAuthGuard, RolesGuard, RateLimitGuard)
@@ -77,9 +83,8 @@ export class AuthController {
     return this.authService.getProfile(req.user.id);
   }
 
-  @Post('logout')
-  @UseGuards(JwtAuthGuard)
-  async logout(@Request() req) {
-    return this.authService.logout(req.user.id);
-  }
+ @Post('logout')
+async logout(@Req() req) {
+  return { success: true, message: 'Logged out successfully' };
+}
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles-guard';
@@ -27,5 +27,28 @@ export class UserController {
   // @Roles('OMC_ADMIN')
   async count(@Query('omcId') omcId?: string) {
     return this.userService.count(omcId ? parseInt(omcId, 10) : undefined);
+  }
+
+  @Patch(':type/:id')
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('OMC_ADMIN') // Adjust roles as needed
+  async editResource(
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    const resourceId = parseInt(id, 10);
+    if (isNaN(resourceId)) {
+      throw new BadRequestException('Invalid ID');
+    }
+
+    switch (type.toLowerCase()) {
+      case 'station':
+        return this.userService.updateStation(resourceId, data);
+      case 'omc':
+        return this.userService.updateOmc(resourceId, data);
+      default:
+        throw new BadRequestException('Invalid resource type. Use "station" or "omc"');
+    }
   }
 }

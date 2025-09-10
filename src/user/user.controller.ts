@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles-guard';
@@ -51,4 +51,48 @@ export class UserController {
         throw new BadRequestException('Invalid resource type. Use "station" or "omc"');
     }
   }
+
+  @Post('attendant')
+async createPumpAttendant(
+  @Body() body: {
+    email: string;
+    password: string;
+    stationId: number;
+    omcId?: number;
+  },
+) {
+  return this.userService.createPumpAttendant(
+    body.email,
+    body.password,
+    body.stationId,
+    body.omcId,
+  );
+}
+
+@Get('attendants/:id')
+async getPumpAttendant(@Param('id', ParseIntPipe) id: number) {
+  return this.userService.getPumpAttendant(id);
+}
+
+@Patch('update/attendants/:id')
+async updatePumpAttendant(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: {
+    email?: string;
+    password?: string;
+    stationId?: number;
+    omcId?: number | null;
+  },
+) {
+  return this.userService.updatePumpAttendant(id, body.email, body.password, body.stationId, body.omcId);
+}
+
+@Delete('attendant/:id')
+async deletePumpAttendant(@Param('id', ParseIntPipe) id: number) {
+  return this.userService.deletePumpAttendant(id);
+}
+@Get('attendants')
+async getAllPumpAttendants() {
+  return this.userService.getAllPumpAttendants();
+}
 }

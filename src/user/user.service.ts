@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
@@ -298,6 +299,206 @@ export class UserService {
       products: true,
       createdAt: true,
       updatedAt: true,
+    },
+  });
+}
+
+async createPumpAttendant(
+  email: string,
+  password: string,
+  stationId: number,
+  omcId?: number,
+) {
+  // Validate email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new BadRequestException('Invalid email format');
+  }
+
+  // Validate stationId exists
+  const station = await this.prisma.station.findUnique({
+    where: { id: stationId },
+  });
+  if (!station) {
+    throw new BadRequestException('Invalid Station ID');
+  }
+
+  // Validate omcId if provided
+  if (omcId) {
+    const omc = await this.prisma.omc.findUnique({
+      where: { id: omcId },
+    });
+    if (!omc) {
+      throw new BadRequestException('Invalid OMC ID');
+    }
+    // Ensure the station belongs to the provided OMC
+    if (station.omcId !== omcId) {
+      throw new BadRequestException('Station does not belong to the provided OMC');
+    }
+  }
+
+  // Validate role exists
+  const role = await this.prisma.role.findUnique({
+    where: { name: 'PUMP_ATTENDANT' },
+  });
+  if (!role) {
+    throw new BadRequestException('Pump Attendant role does not exist');
+  }
+
+  // Check if email is already in use
+  const existingUser = await this.prisma.user.findUnique({
+    where: { email },
+  });
+  if (existingUser) {
+    throw new BadRequestException('Email already in use');
+  }
+
+  // Hash the password
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create the user
+  return this.prisma.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+      role: { connect: { id: role.id } },
+      station: { connect: { id: stationId } },
+      omc: omcId ? { connect: { id: omcId } } : undefined,
+    },
+    include: {
+      role: { select: { id: true, name: true } },
+      station: { select: { id: true, name: true } },
+      omc: { select: { id: true, name: true } },
+    },
+  });
+}
+
+async getPumpAttendant(id: number) {
+  const user = await this.prisma.user.findFirst({
+    where: {
+      id,
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+    include: {
+      role: { select: { id: true, name: true } },
+      station: { select: { id: true, name: true, region: true, district: true, town: true, managerName: true, managerContact: true } },
+      omc: { select: { id: true, name: true, location: true, contactPerson: true, contact: true, email: true } },
+    },
+  });
+
+  if (!user) {
+    throw new NotFoundException('Pump Attendant not found or has been deleted');
+  }
+
+  return user;
+}
+
+async updatePumpAttendant(id: number, email?: string, password?: string, stationId?: number, omcId?: number | null) {
+  // Check if the user exists and is a pump attendant
+  const user = await this.prisma.user.findFirst({
+    where: {
+      id,
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+  });
+
+  if (!user) {
+    throw new NotFoundException('Pump Attendant not found or has been deleted');
+  }
+
+  // Validate email if provided
+  if (email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('Invalid email format');
+    }
+    const existingUser = await this.prisma.user.findFirst({
+      where: { email, id: { not: id }, deletedAt: null },
+    });
+    if (existingUser) {
+      throw new BadRequestException('Email already in use');
+    }
+  }
+
+  // Validate stationId if provided
+  if (stationId) {
+    const station = await this.prisma.station.findUnique({
+      where: { id: stationId },
+    });
+    if (!station) {
+      throw new BadRequestException('Invalid Station ID');
+    }
+
+    // Validate omcId if provided and ensure station belongs to it
+    if (omcId) {
+      const omc = await this.prisma.omc.findUnique({
+        where: { id: omcId },
+      });
+      if (!omc) {
+        throw new BadRequestException('Invalid OMC ID');
+      }
+      if (station.omcId !== omcId) {
+        throw new BadRequestException('Station does not belong to the provided OMC');
+      }
+    }
+  }
+
+  // Hash password if provided
+  const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
+
+  // Update the user
+  return this.prisma.user.update({
+    where: { id },
+    data: {
+      email: email ?? undefined,
+      password: hashedPassword ?? undefined,
+      station: stationId ? { connect: { id: stationId } } : undefined,
+      omc: omcId !== undefined ? (omcId ? { connect: { id: omcId } } : { disconnect: true }) : undefined,
+    },
+    include: {
+      role: { select: { id: true, name: true } },
+      station: { select: { id: true, name: true } },
+      omc: { select: { id: true, name: true } },
+    },
+  });
+}
+
+async deletePumpAttendant(id: number) {
+  // Check if the user exists and is a pump attendant
+  const user = await this.prisma.user.findFirst({
+    where: {
+      id,
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+  });
+
+  if (!user) {
+    throw new NotFoundException('Pump Attendant not found or has been deleted');
+  }
+
+  // Perform soft deletion
+  return this.prisma.user.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+    include: {
+      role: { select: { id: true, name: true } },
+      station: { select: { id: true, name: true } },
+      omc: { select: { id: true, name: true } },
+    },
+  });
+}
+
+async getAllPumpAttendants() {
+  return this.prisma.user.findMany({
+    where: {
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+    include: {
+      role: { select: { id: true, name: true } },
+      station: { select: { id: true, name: true } },
+      omc: { select: { id: true, name: true } },
     },
   });
 }

@@ -101,7 +101,7 @@ export class UserService {
       town?: string;
       managerName?: string;
       managerContact?: string;
-      pumps?: { productName: string; pumpNumber: string }[];
+    pumps?: { productName: string; pumpNumber: string; attendantIds?: number[] }[]; // Add attendantIds
     },
   ) {
     // Validate station exists
@@ -179,34 +179,58 @@ export class UserService {
             });
           }
         }
-
-        // Create new pumps
-        await prisma.pump.createMany({
-          data: data.pumps.map((pump) => {
-            const product = updatedStation.products.find((p) => p.type === pump.productName);
-            if (!product) {
-              throw new BadRequestException(`Product ${pump.productName} not found`);
-            }
-            return {
-              pumpNumber: pump.pumpNumber,
-              productId: product.id,
+        // Create new pumps with attendants
+      for (const pump of data.pumps) {
+        const product = updatedStation.products.find((p) => p.type === pump.productName);
+        if (!product) {
+          throw new BadRequestException(`Product ${pump.productName} not found`);
+        }
+         // Validate attendantIds if provided
+        if (pump.attendantIds) {
+          const attendants = await prisma.user.findMany({
+            where: {
+              id: { in: pump.attendantIds },
+              role: { name: 'PUMP_ATTENDANT' },
               stationId: id,
-            };
-          }),
+              deletedAt: null,
+            },
+          });
+          if (attendants.length !== pump.attendantIds.length) {
+            throw new BadRequestException('One or more attendant IDs are invalid or not assigned to this station');
+          }
+        }
+
+       await prisma.pump.create({
+          data: {
+            pumpNumber: pump.pumpNumber,
+            productId: product.id,
+            stationId: id,
+            attendants: pump.attendantIds
+              ? { connect: pump.attendantIds.map((id) => ({ id })) }
+              : undefined,
+          },
         });
       }
+    }
 
-      // Return updated station
-      return prisma.station.findUnique({
-        where: { id },
-        include: {
-          omc: { select: { id: true, name: true } },
-          products: { select: { id: true, type: true } },
-          pumps: { select: { id: true, pumpNumber: true, productId: true } },
+    // Return updated station
+    return prisma.station.findUnique({
+      where: { id },
+      include: {
+        omc: { select: { id: true, name: true } },
+        products: { select: { id: true, type: true } },
+        pumps: {
+          select: {
+            id: true,
+            pumpNumber: true,
+            productId: true,
+            attendants: { select: { id: true, name: true } }, // Include attendants
+          },
         },
-      });
+      },
     });
-  }
+  });
+}
 
   // Update OMC
  async updateOmc(
@@ -304,11 +328,25 @@ export class UserService {
 }
 
 async createPumpAttendant(
+  name: string,
+  nationalId: string,
+  contact: string,
+  gender: string,
+  cardImage: string | undefined,
   email: string,
   password: string,
   stationId: number,
   omcId?: number,
 ) {
+  // Validate cardImage extension if provided
+  if (cardImage) {
+    const validExtensions = ['.jpg', '.jpeg', '.png'];
+    const extension = cardImage.slice(cardImage.lastIndexOf('.')).toLowerCase();
+    if (!validExtensions.includes(extension)) {
+      throw new BadRequestException('Card image must be a JPG, JPEG, or PNG file');
+    }
+  }
+
   // Validate email format
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new BadRequestException('Invalid email format');
@@ -358,6 +396,11 @@ async createPumpAttendant(
   // Create the user
   return this.prisma.user.create({
     data: {
+      name,
+      nationalId,
+      contact,
+      gender,
+      cardUrl: cardImage,
       email,
       password: hashedPassword,
       role: { connect: { id: role.id } },
@@ -379,10 +422,11 @@ async getPumpAttendant(id: number) {
       role: { name: 'PUMP_ATTENDANT' },
       deletedAt: null,
     },
-    include: {
+   include: {
       role: { select: { id: true, name: true } },
       station: { select: { id: true, name: true, region: true, district: true, town: true, managerName: true, managerContact: true } },
       omc: { select: { id: true, name: true, location: true, contactPerson: true, contact: true, email: true } },
+      pumps: { select: { id: true, pumpNumber: true, stationId: true } }, // Add pumps
     },
   });
 
@@ -393,7 +437,27 @@ async getPumpAttendant(id: number) {
   return user;
 }
 
-async updatePumpAttendant(id: number, email?: string, password?: string, stationId?: number, omcId?: number | null) {
+async updatePumpAttendant(
+  id: number,
+  name?: string,
+  nationalId?: string,
+  contact?: string,
+  gender?: string,
+  cardImage?: string,
+  email?: string,
+  password?: string,
+  stationId?: number,
+  omcId?: number | null,
+) {
+  // Validate cardImage extension if provided
+  if (cardImage) {
+    const validExtensions = ['.jpg', '.jpeg', '.png'];
+    const extension = cardImage.slice(cardImage.lastIndexOf('.')).toLowerCase();
+    if (!validExtensions.includes(extension)) {
+      throw new BadRequestException('Card image must be a JPG, JPEG, or PNG file');
+    }
+  }
+
   // Check if the user exists and is a pump attendant
   const user = await this.prisma.user.findFirst({
     where: {
@@ -450,6 +514,11 @@ async updatePumpAttendant(id: number, email?: string, password?: string, station
   return this.prisma.user.update({
     where: { id },
     data: {
+      name: name ?? undefined,
+      nationalId: nationalId ?? undefined,
+      contact: contact ?? undefined,
+      gender: gender ?? undefined,
+      cardUrl: cardImage ?? undefined,
       email: email ?? undefined,
       password: hashedPassword ?? undefined,
       station: stationId ? { connect: { id: stationId } } : undefined,
@@ -495,10 +564,151 @@ async getAllPumpAttendants() {
       role: { name: 'PUMP_ATTENDANT' },
       deletedAt: null,
     },
-    include: {
+     include: {
       role: { select: { id: true, name: true } },
       station: { select: { id: true, name: true } },
       omc: { select: { id: true, name: true } },
+      pumps: { select: { id: true, pumpNumber: true, stationId: true } }, // Add pumps
+    },
+  });
+}
+
+
+async assignAttendantsToPump(pumpId: number, attendantIds: number[]) {
+  // Validate pump exists
+  const pump = await this.prisma.pump.findUnique({
+    where: { id: pumpId, deletedAt: null },
+  });
+  if (!pump) {
+    throw new NotFoundException('Pump not found');
+  }
+
+  // Validate attendants exist and are pump attendants
+  const attendants = await this.prisma.user.findMany({
+    where: {
+      id: { in: attendantIds },
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+  });
+  if (attendants.length !== attendantIds.length) {
+    throw new BadRequestException('One or more attendant IDs are invalid or not pump attendants');
+  }
+
+  // Ensure attendants belong to the same station as the pump
+  const station = await this.prisma.station.findUnique({
+    where: { id: pump.stationId },
+    include: { users: { where: { role: { name: 'PUMP_ATTENDANT' } } } },
+  });
+  if (!station) {
+    throw new NotFoundException('Station not found');
+  }
+  const stationAttendantIds = station.users.map((user) => user.id);
+  if (!attendantIds.every((id) => stationAttendantIds.includes(id))) {
+    throw new BadRequestException('All attendants must belong to the same station as the pump');
+  }
+
+  // Update the pump with the new attendants
+  return this.prisma.pump.update({
+    where: { id: pumpId },
+    data: {
+      attendants: { connect: attendantIds.map((id) => ({ id })) },
+    },
+    include: {
+      attendants: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
+}
+
+async removeAttendantsFromPump(pumpId: number, attendantIds: number[]) {
+  // Validate pump exists
+  const pump = await this.prisma.pump.findUnique({
+    where: { id: pumpId, deletedAt: null },
+  });
+  if (!pump) {
+    throw new NotFoundException('Pump not found');
+  }
+
+  // Validate attendants exist
+  const attendants = await this.prisma.user.findMany({
+    where: {
+      id: { in: attendantIds },
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+  });
+  if (attendants.length !== attendantIds.length) {
+    throw new BadRequestException('One or more attendant IDs are invalid');
+  }
+
+  // Disconnect attendants from the pump
+  return this.prisma.pump.update({
+    where: { id: pumpId },
+    data: {
+      attendants: { disconnect: attendantIds.map((id) => ({ id })) },
+    },
+    include: {
+      attendants: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
+}
+
+async getPumpAttendants(pumpId: number) {
+  const pump = await this.prisma.pump.findUnique({
+    where: { id: pumpId, deletedAt: null },
+    include: {
+      attendants: {
+        where: { deletedAt: null },
+        select: { id: true, name: true, email: true, station: { select: { id: true, name: true } } },
+      },
+    },
+  });
+  if (!pump) {
+    throw new NotFoundException('Pump not found');
+  }
+  return pump.attendants;
+}
+
+async getAttendantPumps(attendantId: number) {
+  const user = await this.prisma.user.findFirst({
+    where: {
+      id: attendantId,
+      role: { name: 'PUMP_ATTENDANT' },
+      deletedAt: null,
+    },
+    include: {
+      pumps: {
+        where: { deletedAt: null },
+        select: { id: true, pumpNumber: true, station: { select: { id: true, name: true } } },
+      },
+    },
+  });
+  if (!user) {
+    throw new NotFoundException('Pump Attendant not found');
+  }
+  return user.pumps;
+}
+
+async getPumpsByStation(stationId: number) {
+  const station = await this.prisma.station.findUnique({
+    where: { id: stationId, deletedAt: null },
+  });
+  if (!station) {
+    throw new NotFoundException('Station not found');
+  }
+  return this.prisma.pump.findMany({
+    where: {
+      stationId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      pumpNumber: true,
+      stationId: true,
     },
   });
 }

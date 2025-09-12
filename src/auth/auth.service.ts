@@ -41,54 +41,68 @@ async validateToken(token: string) {
   }
 }
 
-  async registerOmc(
-    name: string,
-    location: string,
-    logo: string | undefined,
-    contactPerson: string,
-    contact: string,
-    email: string | undefined,
-    products: { name: string; price: number }[],
-  ) {
-    // Validate logo extension if provided
-    if (logo) {
-      const validExtensions = ['.jpg', '.jpeg', '.png'];
-      const extension = logo.slice(logo.lastIndexOf('.')).toLowerCase();
-      if (!validExtensions.includes(extension)) {
-        throw new UnauthorizedException('Logo must be a JPG, JPEG, or PNG file');
-      }
-    }
-
-    // Validate products
-    if (!products || products.length === 0) {
-      throw new UnauthorizedException('At least one product must be provided');
-    }
-    for (const product of products) {
-      if (!product.name || typeof product.price !== 'number' || product.price <= 0) {
-        throw new UnauthorizedException('Each product must have a valid name and price');
-      }
-    }
-
-    // Create OMC
-    const omc = await this.prisma.omc.create({
-      data: {
-        name,
-        location,
-        logo,
-        contactPerson,
-        contact,
-        email,
-        products, // Stored as JSON in Prisma
-      },
-    });
-
-    // Generate JWT for the created OMC (optional, depending on your use case)
-    const payload = { sub: omc.id, name: omc.name, role: 'OMC_ADMIN' };
-    return {
-      access_token: this.jwtService.sign(payload),
-      omc,
-    };
+ async registerOmc(
+  name: string,
+  location: string,
+  logo: string | undefined,
+  contactPerson: string,
+  contact: string,
+  email: string | undefined,
+  products: { name: string; price: number }[],
+) {
+  // Optional: Validate email (add if missing)
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new BadRequestException('Invalid email format');
   }
+
+  // Optional: Validate contact as phone (e.g., 10 digits)
+  if (!/^[0-9]{10}$/.test(contact)) {
+    throw new BadRequestException('Contact must be a valid 10-digit phone number');
+  }
+
+  // Validate logo extension if provided (minor fix: handle no extension)
+  if (logo) {
+    const dotIndex = logo.lastIndexOf('.');
+    if (dotIndex === -1) {
+      throw new BadRequestException('Logo path must have a valid extension (JPG, JPEG, or PNG)');
+    }
+    const extension = logo.slice(dotIndex).toLowerCase();
+    const validExtensions = ['.jpg', '.jpeg', '.png'];
+    if (!validExtensions.includes(extension)) {
+      throw new BadRequestException('Logo must be a JPG, JPEG, or PNG file'); // <-- Fixed exception
+    }
+  }
+
+  // Validate products (fixed exception)
+  if (!products || products.length === 0) {
+    throw new BadRequestException('At least one product must be provided');
+  }
+  for (const product of products) {
+    if (!product.name || typeof product.price !== 'number' || product.price <= 0) {
+      throw new BadRequestException('Each product must have a valid name and price > 0');
+    }
+  }
+
+  // Create OMC (no change—JSON storage works if schema has Json field)
+  const omc = await this.prisma.omc.create({
+    data: {
+      name,
+      location,
+      logo,
+      contactPerson,
+      contact,
+      email,
+      products, // <-- Auto-serializes to JSON
+    },
+  });
+
+  // Generate JWT (no change)
+  const payload = { sub: omc.id, name: omc.name, role: 'OMC_ADMIN' };
+  return {
+    access_token: this.jwtService.sign(payload),
+    omc,
+  };
+}
 
   // Create a new station with validation
  async createStation(

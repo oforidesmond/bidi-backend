@@ -5,6 +5,8 @@ import { RolesGuard } from 'src/common/guards/roles-guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RateLimitGuard } from './rate-limit.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'src/config/multer.config';
+import { supabaseStorage } from 'src/config/supabase.config';
 
 @Controller('auth')
 export class AuthController {
@@ -25,7 +27,7 @@ async validate(@Req() req) {
  @Post('register')
   @UseGuards(JwtAuthGuard, RolesGuard, RateLimitGuard)
   @Roles('OMC_ADMIN')
-  @UseInterceptors(FileInterceptor('logo'))
+  @UseInterceptors(FileInterceptor('logo', { storage: memoryStorage }))
   async register(
     @Body() body: { 
       name: string; 
@@ -37,11 +39,15 @@ async validate(@Req() req) {
     },
      @UploadedFile() logo?: Express.Multer.File,
   ) {
+     let logoPath: string | undefined;
+  if (logo) {
+    logoPath = await supabaseStorage.handleUpload(logo, 'omc-logos');
+  }
     const products = JSON.parse(body.products);
     return this.authService.registerOmc(
       body.name,
       body.location,
-      logo ? logo.path : undefined,
+      logoPath,
       body.contactPerson,
       body.contact,
       body.email,

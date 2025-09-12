@@ -4,6 +4,8 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles-guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'src/config/multer.config';
+import { supabaseStorage } from 'src/config/supabase.config';
 
 @Controller('user')
 export class UserController {
@@ -28,6 +30,13 @@ export class UserController {
   // @Roles('OMC_ADMIN')
   async count(@Query('omcId') omcId?: string) {
     return this.userService.count(omcId ? parseInt(omcId, 10) : undefined);
+  }
+
+  @Get('attendant-count')
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('OMC_ADMIN')
+  async countAttendants(@Query('omcId') omcId?: string) {
+    return this.userService.countAttendants(omcId ? parseInt(omcId, 10) : undefined);
   }
 
   @Patch(':type/:id')
@@ -56,7 +65,7 @@ export class UserController {
  @Post('attendant')
 // @UseGuards(JwtAuthGuard, RolesGuard, RateLimitGuard)
 // @Roles('OMC_ADMIN')
-@UseInterceptors(FileInterceptor('cardImage'))
+@UseInterceptors(FileInterceptor('cardImage', { storage: memoryStorage }))
 async createPumpAttendant(
   @Body() body: {
     name: string;
@@ -68,14 +77,18 @@ async createPumpAttendant(
     stationId: string; // String because FormData sends strings
     omcId?: string;
   },
-  @UploadedFile() cardImage?: Express.Multer.File,
+   @UploadedFile() cardImage?: Express.Multer.File,
 ) {
+   let cardImagePath: string | undefined;
+  if (cardImage) {
+    cardImagePath = await supabaseStorage.handleUpload(cardImage, 'attendants'); // Optional folder
+  }
   return this.userService.createPumpAttendant(
     body.name,
     body.nationalId,
     body.contact,
     body.gender,
-    cardImage ? cardImage.path : undefined,
+    cardImagePath,
     body.email,
     body.password,
     parseInt(body.stationId, 10),
@@ -91,7 +104,7 @@ async getPumpAttendant(@Param('id', ParseIntPipe) id: number) {
 @Patch('update/attendants/:id')
 // @UseGuards(JwtAuthGuard, RolesGuard, RateLimitGuard)
 // @Roles('OMC_ADMIN')
-@UseInterceptors(FileInterceptor('cardImage'))
+@UseInterceptors(FileInterceptor('cardImage', { storage: memoryStorage }))
 async updatePumpAttendant(
   @Param('id', ParseIntPipe) id: number,
   @Body() body: {
@@ -106,13 +119,17 @@ async updatePumpAttendant(
   },
   @UploadedFile() cardImage?: Express.Multer.File,
 ) {
+  let cardImagePath: string | undefined;
+  if (cardImage) {
+    cardImagePath = await supabaseStorage.handleUpload(cardImage, 'attendants');
+  }
   return this.userService.updatePumpAttendant(
     id,
     body.name,
     body.nationalId,
     body.contact,
     body.gender,
-    cardImage ? cardImage.path : undefined,
+    cardImagePath,
     body.email,
     body.password,
     body.stationId ? parseInt(body.stationId, 10) : undefined,

@@ -90,6 +90,24 @@ export class UserService {
       omcs: omcCount,
     };
   }
+
+  async countAttendants(omcId?: number) {
+  const where: any = {
+    role: { name: 'PUMP_ATTENDANT' },
+    deletedAt: null,
+  };
+  if (omcId) {
+    where.omcId = omcId;  // Filter by OMC
+    // Optional: Validate OMC exists (as in count())
+    const omc = await this.prisma.omc.findUnique({ where: { id: omcId } });
+    if (!omc) {
+      throw new BadRequestException('Invalid OMC ID');
+    }
+  }
+
+  const count = await this.prisma.user.count({ where });
+  return { attendants: count };
+}
   
   //update station and omc
   async updateStation(
@@ -340,12 +358,16 @@ async createPumpAttendant(
 ) {
   // Validate cardImage extension if provided
   if (cardImage) {
-    const validExtensions = ['.jpg', '.jpeg', '.png'];
-    const extension = cardImage.slice(cardImage.lastIndexOf('.')).toLowerCase();
-    if (!validExtensions.includes(extension)) {
-      throw new BadRequestException('Card image must be a JPG, JPEG, or PNG file');
-    }
+  const dotIndex = cardImage.lastIndexOf('.');
+  if (dotIndex === -1) {
+    throw new BadRequestException('Card image path must have a valid extension (JPG, JPEG, or PNG)');
   }
+  const extension = cardImage.slice(dotIndex).toLowerCase();
+  const validExtensions = ['.jpg', '.jpeg', '.png'];
+  if (!validExtensions.includes(extension)) {
+    throw new BadRequestException('Card image must be a JPG, JPEG, or PNG file');
+  }
+}
 
   // Validate email format
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {

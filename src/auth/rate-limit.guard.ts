@@ -9,24 +9,24 @@ export class RateLimitGuard implements CanActivate {
   private readonly rateLimiter: RateLimiterMemory | RateLimiterRedis;
 
   constructor(private configService: ConfigService) {
-    const redisUrl = this.configService.get('REDIS_URL');
+    // const redisUrl = this.configService.get('REDIS_URL');
     const points = this.configService.get<number>('RATE_LIMIT_POINTS', 5);
     const duration = this.configService.get<number>('RATE_LIMIT_DURATION', 60);
 
-    if (redisUrl) {
-      const redis = new Redis(redisUrl);
-      this.rateLimiter = new RateLimiterRedis({
-        storeClient: redis,
-        points,
-        duration,
-        keyPrefix: 'rate-limit',
-      });
-    } else {
-      this.rateLimiter = new RateLimiterMemory({
-        points,
-        duration,
-      });
-    }
+    // if (redisUrl) {
+    //   const redis = new Redis(redisUrl);
+    //   this.rateLimiter = new RateLimiterRedis({
+    //     storeClient: redis,
+    //     points,
+    //     duration,
+    //     keyPrefix: 'rate-limit',
+    //   });
+    // } else {
+    //   this.rateLimiter = new RateLimiterMemory({
+    //     points,
+    //     duration,
+    //   });
+    // }
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

@@ -1,14 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
-
-@Injectable()
+import * as bcrypt from 'bcrypt';@Injectable()
 export class UserService {
     constructor(
     private readonly prisma: PrismaService,
-  ) {}
-
-  async getAllOmcs() {
+  ) {}  async getAllOmcs() {
     return this.prisma.omc.findMany({
       where: {
         deletedAt: null,
@@ -27,9 +23,9 @@ export class UserService {
         deletedAt: true,
       },
     });
-  }
+  }  
 
-  async getStations(omcId?: number) {
+async getStations(omcId?: number) {
     const where: any = { deletedAt: null };
     if (omcId) {
       where.omcId = omcId;
@@ -40,20 +36,22 @@ export class UserService {
       if (!omc) {
         throw new BadRequestException('Invalid OMC ID');
       }
-    }
-
-    return this.prisma.station.findMany({
-      where,
-     select: {
+    }return this.prisma.station.findMany({
+  where,
+ select: {
+  id: true,
+  name: true,
+  region: true,
+  district: true,
+  town: true,
+  managerName: true,
+  managerContact: true,
+  omcId: true,
+  omc: { select: { id: true, name: true } },
+  dispensers: {
+    select: {
       id: true,
-      name: true,
-      region: true,
-      district: true,
-      town: true,
-      managerName: true,
-      managerContact: true,
-      omcId: true,
-      omc: { select: { id: true, name: true } },
+      dispenserNumber: true,
       pumps: {
         select: {
           id: true,
@@ -61,14 +59,13 @@ export class UserService {
           product: { select: { id: true, type: true } },
         },
       },
-      createdAt: true,
-      updatedAt: true,
-      deletedAt: true,
     },
-  });
-  }
-
-   async count(omcId?: number) {
+  },
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+},  });
+  }   async count(omcId?: number) {
     const where: any = { deletedAt: null };
     if (omcId) {
       where.omcId = omcId;
@@ -78,20 +75,15 @@ export class UserService {
       if (!omc) {
         throw new BadRequestException('Invalid OMC ID');
       }
-    }
+    }const [stationCount, omcCount] = await Promise.all([
+  this.prisma.station.count({ where }),
+  this.prisma.omc.count({ where: { deletedAt: null } }),
+]);
 
-    const [stationCount, omcCount] = await Promise.all([
-      this.prisma.station.count({ where }),
-      this.prisma.omc.count({ where: { deletedAt: null } }),
-    ]);
-
-    return {
-      stations: stationCount,
-      omcs: omcCount,
-    };
-  }
-
-  async countAttendants(omcId?: number) {
+return {
+  stations: stationCount,
+  omcs: omcCount,
+};  }  async countAttendants(omcId?: number) {
   const where: any = {
     role: { name: 'PUMP_ATTENDANT' },
     deletedAt: null,
@@ -103,13 +95,9 @@ export class UserService {
     if (!omc) {
       throw new BadRequestException('Invalid OMC ID');
     }
-  }
-
-  const count = await this.prisma.user.count({ where });
+  }  const count = await this.prisma.user.count({ where });
   return { attendants: count };
-}
-  
-  //update station and omc
+}  //update station and omc
   async updateStation(
     id: number,
     data: {
@@ -119,124 +107,139 @@ export class UserService {
       town?: string;
       managerName?: string;
       managerContact?: string;
-    pumps?: { productName: string; pumpNumber: string; attendantIds?: number[] }[]; // Add attendantIds
+    pumps?: { productName: string; pumpNumber: string; dispenserNumber: string; attendantIds?: number[] }[]; // Now requires dispenserNumber
     },
   ) {
     // Validate station exists
     const station = await this.prisma.station.findUnique({
       where: { id, deletedAt: null },
-      include: { pumps: true, products: true },
+      include: { dispensers: true, products: true },
     });
     if (!station) {
       throw new NotFoundException('Station not found');
-    }
+    }// Validate pump numbers are unique if provided
+if (data.pumps) {
+  const pumpNumbers = data.pumps.map((p) => p.pumpNumber);
+  const uniquePumpNumbers = new Set(pumpNumbers);
+  if (uniquePumpNumbers.size !== pumpNumbers.length) {
+    throw new BadRequestException('Pump numbers must be unique');
+  }
 
-    // Validate pump numbers are unique if provided
-    if (data.pumps) {
-      const pumpNumbers = data.pumps.map((p) => p.pumpNumber);
-      const uniquePumpNumbers = new Set(pumpNumbers);
-      if (uniquePumpNumbers.size !== pumpNumbers.length) {
-        throw new BadRequestException('Pump numbers must be unique');
-      }
+  // Check for existing pump numbers (excluding current station's pumps)
+  const existingPumps = await this.prisma.pump.findMany({
+    where: {
+      pumpNumber: { in: pumpNumbers },
+    },
+  });
+  if (existingPumps.length > 0) {
+    throw new BadRequestException('One or more pump numbers already exist');
+  }
+}
 
-      // Check for existing pump numbers (excluding current station's pumps)
-      const existingPumps = await this.prisma.pump.findMany({
-        where: {
-          pumpNumber: { in: pumpNumbers },
-          stationId: { not: id },
-        },
-      });
-      if (existingPumps.length > 0) {
-        throw new BadRequestException('One or more pump numbers already exist');
-      }
-    }
-
-    return this.prisma.$transaction(async (prisma) => {
-      // Update station details
-      const updatedStation = await prisma.station.update({
-        where: { id },
-        data: {
-          name: data.name,
-          region: data.region,
-          district: data.district,
-          town: data.town,
-          managerName: data.managerName,
-          managerContact: data.managerContact,
-        },
-        include: {
-          omc: { select: { id: true, name: true } },
-          products: { select: { id: true, type: true } },
+return this.prisma.$transaction(async (prisma) => {
+  // Update station details
+  const updatedStation = await prisma.station.update({
+    where: { id },
+    data: {
+      name: data.name,
+      region: data.region,
+      district: data.district,
+      town: data.town,
+      managerName: data.managerName,
+      managerContact: data.managerContact,
+    },
+    include: {
+      omc: { select: { id: true, name: true } },
+      products: { select: { id: true, type: true } },
+      dispensers: {
+        select: {
+          id: true,
+          dispenserNumber: true,
           pumps: { select: { id: true, pumpNumber: true, productId: true } },
         },
+      },
+    },
+  });
+
+  // Update pumps and products if provided
+  if (data.pumps) {
+    // Delete existing pumps for this station (via its dispensers)
+    const dispenserIds = station.dispensers.map((d) => d.id);
+    if (dispenserIds.length > 0) {
+      await prisma.pump.deleteMany({ where: { dispenserId: { in: dispenserIds } } });
+    }
+
+    // Create or update products
+    const productNames = [...new Set(data.pumps.map((p) => p.productName))];
+    await prisma.product.deleteMany({
+      where: { stationId: id, type: { notIn: productNames } },
+    });
+
+    // Create new products if they don't exist
+    for (const productName of productNames) {
+      const existingProduct = await prisma.product.findFirst({
+        where: { stationId: id, type: productName },
       });
-
-      // Update pumps and products if provided
-      if (data.pumps) {
-        // Delete existing pumps
-        await prisma.pump.deleteMany({ where: { stationId: id } });
-
-        // Create or update products
-        const productNames = [...new Set(data.pumps.map((p) => p.productName))];
-        await prisma.product.deleteMany({
-          where: { stationId: id, type: { notIn: productNames } },
-        });
-
-        // Create new products if they don't exist
-        for (const productName of productNames) {
-          const existingProduct = await prisma.product.findFirst({
-            where: { stationId: id, type: productName },
-          });
-          if (!existingProduct) {
-            await prisma.product.create({
-              data: {
-                type: productName,
-                liters: 0,
-                amount: 0,
-                stationId: id,
-              },
-            });
-          }
-        }
-        // Create new pumps with attendants
-      for (const pump of data.pumps) {
-        const product = updatedStation.products.find((p) => p.type === pump.productName);
-        if (!product) {
-          throw new BadRequestException(`Product ${pump.productName} not found`);
-        }
-         // Validate attendantIds if provided
-        if (pump.attendantIds) {
-          const attendants = await prisma.user.findMany({
-            where: {
-              id: { in: pump.attendantIds },
-              role: { name: 'PUMP_ATTENDANT' },
-              stationId: id,
-              deletedAt: null,
-            },
-          });
-          if (attendants.length !== pump.attendantIds.length) {
-            throw new BadRequestException('One or more attendant IDs are invalid or not assigned to this station');
-          }
-        }
-
-       await prisma.pump.create({
+      if (!existingProduct) {
+        await prisma.product.create({
           data: {
-            pumpNumber: pump.pumpNumber,
-            productId: product.id,
+            type: productName,
+            liters: 0,
+            amount: 0,
             stationId: id,
-            attendants: pump.attendantIds
-              ? { connect: pump.attendantIds.map((id) => ({ id })) }
-              : undefined,
           },
         });
       }
     }
+    // Create new pumps with attendants
+  for (const pump of data.pumps) {
+    const product = await prisma.product.findFirst({ where: { stationId: id, type: pump.productName } });
+    if (!product) {
+      throw new BadRequestException(`Product ${pump.productName} not found`);
+    }
+    // Find dispenser within this station
+    const dispenser = station.dispensers.find((d) => d.dispenserNumber === pump.dispenserNumber);
+    if (!dispenser) {
+      throw new BadRequestException(`Dispenser ${pump.dispenserNumber} not found in this station`);
+    }
+     // Validate attendantIds if provided
+    if (pump.attendantIds) {
+      const attendants = await prisma.user.findMany({
+        where: {
+          id: { in: pump.attendantIds },
+          role: { name: 'PUMP_ATTENDANT' },
+          stationId: id,
+          deletedAt: null,
+        },
+      });
+      if (attendants.length !== pump.attendantIds.length) {
+        throw new BadRequestException('One or more attendant IDs are invalid or not assigned to this station');
+      }
+    }
 
-    // Return updated station
-    return prisma.station.findUnique({
-      where: { id },
-      include: {
-        omc: { select: { id: true, name: true } },
-        products: { select: { id: true, type: true } },
+   await prisma.pump.create({
+      data: {
+        pumpNumber: pump.pumpNumber,
+        productId: product.id,
+        dispenserId: dispenser.id,
+        attendants: pump.attendantIds
+          ? { connect: pump.attendantIds.map((id) => ({ id })) }
+          : undefined,
+      },
+    });
+  }
+}
+
+// Return updated station
+return prisma.station.findUnique({
+  where: { id },
+  include: {
+    omc: { select: { id: true, name: true } },
+    products: { select: { id: true, type: true } },
+    dispensers: {
+      select: {
+        id: true,
+        dispenserNumber: true,
         pumps: {
           select: {
             id: true,
@@ -246,11 +249,10 @@ export class UserService {
           },
         },
       },
-    });
-  });
-}
-
-  // Update OMC
+    },
+  },
+});  });
+}  // Update OMC
  async updateOmc(
   id: number,
   data: {
@@ -281,9 +283,7 @@ export class UserService {
   });
   if (!omc) {
     throw new NotFoundException('OMC not found');
-  }
-
-  // Validate email if provided
+  }  // Validate email if provided
   if (data.email) {
     const existingEmail = await this.prisma.omc.findFirst({
       where: { email: data.email, id: { not: id }, deletedAt: null },
@@ -291,9 +291,7 @@ export class UserService {
     if (existingEmail) {
       throw new BadRequestException('Email already in use by another OMC');
     }
-  }
-
-  // Validate products if provided
+  }  // Validate products if provided
   if (data.products) {
     if (!Array.isArray(data.products)) {
       throw new BadRequestException('Products must be an array');
@@ -303,9 +301,7 @@ export class UserService {
         throw new BadRequestException('Each product must have a name (string) and price (number)');
       }
     }
-  }
-
-  // Merge products if provided
+  }  // Merge products if provided
   const existingProducts = (omc.products as { name: string; price: number }[]) || [];
   let updatedProducts = existingProducts;
   if (data.products) {
@@ -316,9 +312,7 @@ export class UserService {
       }
       return existingProduct;
     });
-  }
-
-  // Update OMC
+  }  // Update OMC
   return this.prisma.omc.update({
     where: { id },
     data: {
@@ -343,9 +337,7 @@ export class UserService {
       updatedAt: true,
     },
   });
-}
-
-async createPumpAttendant(
+}async createPumpAttendant(
   name: string,
   nationalId: string,
   contact: string,
@@ -367,22 +359,16 @@ async createPumpAttendant(
   if (!validExtensions.includes(extension)) {
     throw new BadRequestException('Card image must be a JPG, JPEG, or PNG file');
   }
-}
-
-  // Validate email format
+}  // Validate email format
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new BadRequestException('Invalid email format');
-  }
-
-  // Validate stationId exists
+  }  // Validate stationId exists
   const station = await this.prisma.station.findUnique({
     where: { id: stationId },
   });
   if (!station) {
     throw new BadRequestException('Invalid Station ID');
-  }
-
-  // Validate omcId if provided
+  }  // Validate omcId if provided
   if (omcId) {
     const omc = await this.prisma.omc.findUnique({
       where: { id: omcId },
@@ -394,28 +380,20 @@ async createPumpAttendant(
     if (station.omcId !== omcId) {
       throw new BadRequestException('Station does not belong to the provided OMC');
     }
-  }
-
-  // Validate role exists
+  }  // Validate role exists
   const role = await this.prisma.role.findUnique({
     where: { name: 'PUMP_ATTENDANT' },
   });
   if (!role) {
     throw new BadRequestException('Pump Attendant role does not exist');
-  }
-
-  // Check if email is already in use
+  }  // Check if email is already in use
   const existingUser = await this.prisma.user.findUnique({
     where: { email },
   });
   if (existingUser) {
     throw new BadRequestException('Email already in use');
-  }
-
-  // Hash the password
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  // Create the user
+  }  // Hash the password
+  const hashedPassword = await bcrypt.hash(password, 10);  // Create the user
   return this.prisma.user.create({
     data: {
       name,
@@ -435,9 +413,7 @@ async createPumpAttendant(
       omc: { select: { id: true, name: true } },
     },
   });
-}
-
-async getPumpAttendant(id: number) {
+}async getPumpAttendant(id: number) {
   const user = await this.prisma.user.findFirst({
     where: {
       id,
@@ -448,18 +424,12 @@ async getPumpAttendant(id: number) {
       role: { select: { id: true, name: true } },
       station: { select: { id: true, name: true, region: true, district: true, town: true, managerName: true, managerContact: true } },
       omc: { select: { id: true, name: true, location: true, contactPerson: true, contact: true, email: true } },
-      pumps: { select: { id: true, pumpNumber: true, stationId: true } }, // Add pumps
+      pumps: { select: { id: true, pumpNumber: true, dispenser: { select: { station: { select: { id: true, name: true } } } } } }, // reflect dispenser relation
     },
-  });
-
-  if (!user) {
+  });  if (!user) {
     throw new NotFoundException('Pump Attendant not found or has been deleted');
-  }
-
-  return user;
-}
-
-async updatePumpAttendant(
+  }  return user;
+}async updatePumpAttendant(
   id: number,
   name?: string,
   nationalId?: string,
@@ -478,22 +448,16 @@ async updatePumpAttendant(
     if (!validExtensions.includes(extension)) {
       throw new BadRequestException('Card image must be a JPG, JPEG, or PNG file');
     }
-  }
-
-  // Check if the user exists and is a pump attendant
+  }  // Check if the user exists and is a pump attendant
   const user = await this.prisma.user.findFirst({
     where: {
       id,
       role: { name: 'PUMP_ATTENDANT' },
       deletedAt: null,
     },
-  });
-
-  if (!user) {
+  });  if (!user) {
     throw new NotFoundException('Pump Attendant not found or has been deleted');
-  }
-
-  // Validate email if provided
+  }  // Validate email if provided
   if (email) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new BadRequestException('Invalid email format');
@@ -504,35 +468,26 @@ async updatePumpAttendant(
     if (existingUser) {
       throw new BadRequestException('Email already in use');
     }
-  }
-
-  // Validate stationId if provided
+  }  // Validate stationId if provided
   if (stationId) {
     const station = await this.prisma.station.findUnique({
       where: { id: stationId },
     });
     if (!station) {
       throw new BadRequestException('Invalid Station ID');
-    }
-
-    // Validate omcId if provided and ensure station belongs to it
-    if (omcId) {
-      const omc = await this.prisma.omc.findUnique({
-        where: { id: omcId },
-      });
-      if (!omc) {
-        throw new BadRequestException('Invalid OMC ID');
-      }
-      if (station.omcId !== omcId) {
-        throw new BadRequestException('Station does not belong to the provided OMC');
-      }
-    }
+    }// Validate omcId if provided and ensure station belongs to it
+if (omcId) {
+  const omc = await this.prisma.omc.findUnique({
+    where: { id: omcId },
+  });
+  if (!omc) {
+    throw new BadRequestException('Invalid OMC ID');
   }
-
-  // Hash password if provided
-  const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
-
-  // Update the user
+  if (station.omcId !== omcId) {
+    throw new BadRequestException('Station does not belong to the provided OMC');
+  }
+}  }  // Hash password if provided
+  const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;  // Update the user
   return this.prisma.user.update({
     where: { id },
     data: {
@@ -552,9 +507,7 @@ async updatePumpAttendant(
       omc: { select: { id: true, name: true } },
     },
   });
-}
-
-async deletePumpAttendant(id: number) {
+}async deletePumpAttendant(id: number) {
   // Check if the user exists and is a pump attendant
   const user = await this.prisma.user.findFirst({
     where: {
@@ -562,13 +515,9 @@ async deletePumpAttendant(id: number) {
       role: { name: 'PUMP_ATTENDANT' },
       deletedAt: null,
     },
-  });
-
-  if (!user) {
+  });  if (!user) {
     throw new NotFoundException('Pump Attendant not found or has been deleted');
-  }
-
-  // Perform soft deletion
+  }  // Perform soft deletion
   return this.prisma.user.update({
     where: { id },
     data: { deletedAt: new Date() },
@@ -578,9 +527,7 @@ async deletePumpAttendant(id: number) {
       omc: { select: { id: true, name: true } },
     },
   });
-}
-
-async getAllPumpAttendants() {
+}async getAllPumpAttendants() {
   return this.prisma.user.findMany({
     where: {
       role: { name: 'PUMP_ATTENDANT' },
@@ -590,22 +537,18 @@ async getAllPumpAttendants() {
       role: { select: { id: true, name: true } },
       station: { select: { id: true, name: true } },
       omc: { select: { id: true, name: true } },
-      pumps: { select: { id: true, pumpNumber: true, stationId: true } }, // Add pumps
+      pumps: { select: { id: true, pumpNumber: true, dispenser: { select: { station: { select: { id: true, name: true } } } } } }, // reflect dispenser relation
     },
   });
-}
-
-
-async assignAttendantsToPump(pumpId: number, attendantIds: number[]) {
+}async assignAttendantsToPump(pumpId: number, attendantIds: number[]) {
   // Validate pump exists
   const pump = await this.prisma.pump.findUnique({
     where: { id: pumpId, deletedAt: null },
+    include: { dispenser: { include: { station: { include: { users: { where: { role: { name: 'PUMP_ATTENDANT' } } } } } } } },
   });
   if (!pump) {
     throw new NotFoundException('Pump not found');
-  }
-
-  // Validate attendants exist and are pump attendants
+  }  // Validate attendants exist and are pump attendants
   const attendants = await this.prisma.user.findMany({
     where: {
       id: { in: attendantIds },
@@ -615,22 +558,12 @@ async assignAttendantsToPump(pumpId: number, attendantIds: number[]) {
   });
   if (attendants.length !== attendantIds.length) {
     throw new BadRequestException('One or more attendant IDs are invalid or not pump attendants');
-  }
-
-  // Ensure attendants belong to the same station as the pump
-  const station = await this.prisma.station.findUnique({
-    where: { id: pump.stationId },
-    include: { users: { where: { role: { name: 'PUMP_ATTENDANT' } } } },
-  });
-  if (!station) {
-    throw new NotFoundException('Station not found');
-  }
-  const stationAttendantIds = station.users.map((user) => user.id);
-  if (!attendantIds.every((id) => stationAttendantIds.includes(id))) {
+  }  // Ensure attendants belong to the same station as the pump
+  const stationUsers = pump.dispenser?.station.users;
+  const stationAttendantIds = stationUsers?.map((user) => user.id);
+  if (!attendantIds.every((id) => stationAttendantIds?.includes(id))) {
     throw new BadRequestException('All attendants must belong to the same station as the pump');
-  }
-
-  // Update the pump with the new attendants
+  }  // Update the pump with the new attendants
   return this.prisma.pump.update({
     where: { id: pumpId },
     data: {
@@ -642,18 +575,14 @@ async assignAttendantsToPump(pumpId: number, attendantIds: number[]) {
       },
     },
   });
-}
-
-async removeAttendantsFromPump(pumpId: number, attendantIds: number[]) {
+}async removeAttendantsFromPump(pumpId: number, attendantIds: number[]) {
   // Validate pump exists
   const pump = await this.prisma.pump.findUnique({
     where: { id: pumpId, deletedAt: null },
   });
   if (!pump) {
     throw new NotFoundException('Pump not found');
-  }
-
-  // Validate attendants exist
+  }  // Validate attendants exist
   const attendants = await this.prisma.user.findMany({
     where: {
       id: { in: attendantIds },
@@ -663,9 +592,7 @@ async removeAttendantsFromPump(pumpId: number, attendantIds: number[]) {
   });
   if (attendants.length !== attendantIds.length) {
     throw new BadRequestException('One or more attendant IDs are invalid');
-  }
-
-  // Disconnect attendants from the pump
+  }  // Disconnect attendants from the pump
   return this.prisma.pump.update({
     where: { id: pumpId },
     data: {
@@ -677,9 +604,7 @@ async removeAttendantsFromPump(pumpId: number, attendantIds: number[]) {
       },
     },
   });
-}
-
-async getPumpAttendants(pumpId: number) {
+}async getPumpAttendants(pumpId: number) {
   const pump = await this.prisma.pump.findUnique({
     where: { id: pumpId, deletedAt: null },
     include: {
@@ -693,9 +618,7 @@ async getPumpAttendants(pumpId: number) {
     throw new NotFoundException('Pump not found');
   }
   return pump.attendants;
-}
-
-async getAttendantPumps(attendantId: number) {
+}async getAttendantPumps(attendantId: number) {
   const user = await this.prisma.user.findFirst({
     where: {
       id: attendantId,
@@ -705,7 +628,7 @@ async getAttendantPumps(attendantId: number) {
     include: {
       pumps: {
         where: { deletedAt: null },
-        select: { id: true, pumpNumber: true, station: { select: { id: true, name: true } } },
+        select: { id: true, pumpNumber: true, dispenser: { select: { station: { select: { id: true, name: true } } } } },
       },
     },
   });
@@ -713,9 +636,7 @@ async getAttendantPumps(attendantId: number) {
     throw new NotFoundException('Pump Attendant not found');
   }
   return user.pumps;
-}
-
-async getPumpsByStation(stationId: number) {
+}async getPumpsByStation(stationId: number) {
   const station = await this.prisma.station.findUnique({
     where: { id: stationId, deletedAt: null },
   });
@@ -724,13 +645,12 @@ async getPumpsByStation(stationId: number) {
   }
   return this.prisma.pump.findMany({
     where: {
-      stationId,
+      product: { stationId },
       deletedAt: null,
     },
     select: {
       id: true,
       pumpNumber: true,
-      stationId: true,
     },
   });
 }

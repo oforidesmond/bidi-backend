@@ -105,96 +105,133 @@ async validateToken(token: string) {
 }
 
   // Create a new station with validation
- async createStation(
-    name: string,
-    omcId: number,
-    region?: string,
-    district?: string,
-    town?: string,
-    managerName?: string,
-    managerContact?: string,
-    pumps?: { productName: string; pumpNumber: string }[]
-  ) {
-    // Validate omcId exists
-    const omc = await this.prisma.omc.findUnique({
-      where: { id: omcId },
-    });
-    if (!omc) {
-      throw new BadRequestException('Invalid OMC ID');
-    }
-
-    // Validate pump numbers are unique
-    if (pumps) {
-      const pumpNumbers = pumps.map((p) => p.pumpNumber);
-      const uniquePumpNumbers = new Set(pumpNumbers);
-      if (uniquePumpNumbers.size !== pumpNumbers.length) {
-        throw new BadRequestException('Pump numbers must be unique');
-      }
-
-      const existingPumps = await this.prisma.pump.findMany({
-        where: { pumpNumber: { in: pumpNumbers } },
-      });
-      if (existingPumps.length > 0) {
-        throw new BadRequestException('One or more pump numbers already exist');
-      }
-    }
-
-    // Create station and products in a transaction
-    return this.prisma.$transaction(async (prisma) => {
-      // Step 1: Create the station with products
-      const station = await prisma.station.create({
-        data: {
-          name,
-          omc: { connect: { id: omcId } },
-          region,
-          district,
-          town,
-          managerName,
-          managerContact,
-          products: pumps
-            ? {
-                create: [...new Set(pumps.map((p) => p.productName))].map((productName) => ({
-                  type: productName,
-                  liters: 0,
-                  amount: 0,
-                })),
-              }
-            : undefined,
-        },
-        include: {
-          omc: { select: { id: true, name: true } },
-          products: { select: { id: true, type: true } },
-        },
-      });
-
-      // Step 2: Create pumps and connect to products
-      if (pumps && pumps.length > 0) {
-        await prisma.pump.createMany({
-          data: pumps.map((pump) => {
-            const product = station.products.find((p) => p.type === pump.productName);
-            if (!product) {
-              throw new BadRequestException(`Product ${pump.productName} not found in created station`);
-            }
-            return {
-              pumpNumber: pump.pumpNumber,
-              productId: product.id,
-              stationId: station.id,
-            };
-          }),
-        });
-      }
-
-      // Step 3: Fetch the station with pumps included
-      return prisma.station.findUnique({
-        where: { id: station.id },
-        include: {
-          omc: { select: { id: true, name: true } },
-          products: { select: { id: true, type: true } },
-          pumps: { select: { id: true, pumpNumber: true, productId: true } },
-        },
-      });
-    });
+async createStation(
+  name: string,
+  omcId: number,
+  region?: string,
+  district?: string,
+  town?: string,
+  managerName?: string,
+  managerContact?: string,
+  dispensers?: { dispenserNumber: string; pumps: { productName: string; pumpNumber: string }[] }[]
+) {
+  // Validate omcId exists
+  const omc = await this.prisma.omc.findUnique({
+    where: { id: omcId },
+  });
+  if (!omc) {
+    throw new BadRequestException('Invalid OMC ID');
   }
+
+  // Validate dispenser numbers are unique (with station name prepended)
+  if (dispensers) {
+    const dispenserNumbers = dispensers.map((d) => `${name}-${d.dispenserNumber}`);
+    const uniqueDispenserNumbers = new Set(dispenserNumbers);
+    if (uniqueDispenserNumbers.size !== dispenserNumbers.length) {
+      throw new BadRequestException('Dispenser numbers must be unique');
+    }
+
+    // Check for existing dispensers
+    const existingDispensers = await this.prisma.dispenser.findMany({
+      where: { dispenserNumber: { in: dispenserNumbers } },
+    });
+    if (existingDispensers.length > 0) {
+      throw new BadRequestException('One or more dispenser numbers already exist');
+    }
+
+    // Validate pump numbers are unique across all dispensers
+    const allPumps = dispensers.flatMap((d) => d.pumps);
+    const pumpNumbers = allPumps.map((p) => p.pumpNumber);
+    const uniquePumpNumbers = new Set(pumpNumbers);
+    if (uniquePumpNumbers.size !== pumpNumbers.length) {
+      throw new BadRequestException('Pump numbers must be unique');
+    }
+
+    // Check for existing pumps
+    const existingPumps = await this.prisma.pump.findMany({
+      where: { pumpNumber: { in: pumpNumbers } },
+    });
+    if (existingPumps.length > 0) {
+      throw new BadRequestException('One or more pump numbers already exist');
+    }
+  }
+
+  // Create station, dispensers, products, and pumps in a transaction
+  return this.prisma.$transaction(async (prisma) => {
+    // Step 1: Create the station with products
+    const allPumps = dispensers ? dispensers.flatMap((d) => d.pumps) : [];
+    const station = await prisma.station.create({
+      data: {
+        name,
+        omc: { connect: { id: omcId } },
+        region,
+        district,
+        town,
+        managerName,
+        managerContact,
+        products: allPumps.length
+          ? {
+              create: [...new Set(allPumps.map((p) => p.productName))].map((productName) => ({
+                type: productName,
+                liters: 0,
+                amount: 0,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        omc: { select: { id: true, name: true } },
+        products: { select: { id: true, type: true } },
+      },
+    });
+
+    // Step 2: Create dispensers and their pumps
+    if (dispensers && dispensers.length > 0) {
+      for (const disp of dispensers) {
+        const dispenserNumber = `${name}-${disp.dispenserNumber}`;
+        const dispenser = await prisma.dispenser.create({
+          data: {
+            dispenserNumber,
+            station: { connect: { id: station.id } },
+          },
+        });
+
+        // Create pumps for this dispenser
+        if (disp.pumps && disp.pumps.length > 0) {
+          await prisma.pump.createMany({
+            data: disp.pumps.map((pump) => {
+              const product = station.products.find((p) => p.type === pump.productName);
+              if (!product) {
+                throw new BadRequestException(`Product ${pump.productName} not found in created station`);
+              }
+              return {
+                pumpNumber: pump.pumpNumber,
+                productId: product.id,
+                dispenserId: dispenser.id,
+              };
+            }),
+          });
+        }
+      }
+    }
+
+    // Step 3: Fetch the station with dispensers and pumps included
+    return prisma.station.findUnique({
+      where: { id: station.id },
+      include: {
+        omc: { select: { id: true, name: true } },
+        products: { select: { id: true, type: true } },
+        dispensers: {
+          select: {
+            id: true,
+            dispenserNumber: true,
+            pumps: { select: { id: true, pumpNumber: true, productId: true } },
+          },
+        },
+      },
+    });
+  });
+}
 
   async logout(userId: number) {
     // Implement logout logic, e.g., invalidate the JWT or remove session

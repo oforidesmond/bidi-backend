@@ -13,7 +13,7 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
-  @UseGuards(RateLimitGuard)
+  // @UseGuards(RateLimitGuard)
   async login(@Body() body: { email: string; password: string }) {
     return this.authService.login(body.email, body.password);
   }
@@ -25,7 +25,7 @@ async validate(@Req() req) {
 }
 // Register OMC with validation for logo and products
  @Post('register')
-  @UseGuards(JwtAuthGuard, RolesGuard, RateLimitGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OMC_ADMIN')
   @UseInterceptors(FileInterceptor('logo', { storage: memoryStorage }))
   async register(
@@ -55,33 +55,32 @@ async validate(@Req() req) {
     );
   }
 
-  //create a new station
-  @Post('stations')
-  // @UseGuards(JwtAuthGuard, RolesGuard)
-  // @Roles('OMC_ADMIN')
-  async createStation(
-    @Body() body: { 
-      name: string; 
-      omcId: number; 
-      region?: string; 
-      district?: string; 
-      town?: string; 
-      managerName?: string; 
-      managerContact?: string;
-      pumps?: { productName: string; pumpNumber: string }[];
-    },
-  ) {
-    return this.authService.createStation(
-      body.name,
-      body.omcId,
-      body.region,
-      body.district,
-      body.town,
-      body.managerName,
-      body.managerContact,
-      body.pumps
-    );
-  }
+ @Post('stations')
+// @UseGuards(JwtAuthGuard, RolesGuard)
+// @Roles('OMC_ADMIN')
+async createStation(
+  @Body() body: {
+    name: string;
+    omcId: number;
+    region?: string;
+    district?: string;
+    town?: string;
+    managerName?: string;
+    managerContact?: string;
+    dispensers?: { dispenserNumber: string; pumps: { productName: string; pumpNumber: string }[] }[];
+  },
+) {
+  return this.authService.createStation(
+    body.name,
+    body.omcId,
+    body.region,
+    body.district,
+    body.town,
+    body.managerName,
+    body.managerContact,
+    body.dispensers
+  );
+}
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)

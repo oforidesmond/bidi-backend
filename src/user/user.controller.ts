@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, ParseIntPipe, Patch, Post, Query, Request, UnauthorizedException, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles-guard';
@@ -181,4 +181,55 @@ async getAttendantPumps(@Param('attendantId', ParseIntPipe) attendantId: number)
 async getPumpsByStation(@Query('stationId', ParseIntPipe) stationId: number) {
   return this.userService.getPumpsByStation(stationId);
 }
+
+@Post('buy-token')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('DRIVER')
+  async buyFuelToken(
+    @Request() req,
+    @Body()
+    body: {
+      amount: number;
+      mobileNumber: string;
+    },
+  ) {
+    if (!req.user || !req.user.id) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    if (req.user.role !== 'DRIVER') {
+      throw new ForbiddenException('User is not a driver');
+    }
+    const driverId = req.user.id; // Use user.id as driverId
+    return this.userService.buyFuelToken(driverId, {
+      amount: body.amount,
+      mobileNumber: body.mobileNumber,
+    });
+  }
+
+@Get('driver-tokens')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('DRIVER')
+  async getDriverTransactions(
+    @Request() req,
+    @Query('status') status?: 'USED' | 'UNUSED',
+  ) {
+    if (!req.user || !req.user.id) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    if (req.user.role !== 'DRIVER') {
+      throw new ForbiddenException('User is not a driver');
+    }
+    const driverId = req.user.id; // Use user.id as driverId
+    return this.userService.getDriverTransactions(driverId, status);
+  }
+
+  @Get('products')
+  async getProducts() {
+    return this.userService.getProducts();
+  }
+
+  @Get('driver-mobile-number')
+  async getDriverMobileNumber(@Query('userId', ParseIntPipe) userId: number) {
+    return this.userService.getDriverMobileNumber(userId);
+  }
 }

@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import * as bcrypt from 'bcrypt';@Injectable()
+import * as bcrypt from 'bcrypt';
+import { v4 as uuidv4 } from 'uuid';
+
+@Injectable()
 export class UserService {
     constructor(
     private readonly prisma: PrismaService,
-  ) {}  async getAllOmcs() {
+  ) {}  
+  async getAllOmcs() {
     return this.prisma.omc.findMany({
       where: {
         deletedAt: null,
@@ -653,5 +657,86 @@ if (omcId) {
       pumpNumber: true,
     },
   });
+}
+
+async buyFuelToken(
+  userId: number,
+  data: {
+    amount: number;
+    mobileNumber: string;
+  },
+) {
+  // Validate driver (user with DRIVER role and corresponding Driver record)
+  const driver = await this.prisma.driver.findFirst({
+    where: { userId, deletedAt: null },
+    include: { user: { include: { role: true } } },
+  });
+  if (!driver || driver.user?.role.name !== 'DRIVER') {
+    throw new NotFoundException('Driver not found or has been deleted');
+  }
+
+  // Generate unique token
+  const token = uuidv4();
+
+  // Create transaction (fuel token purchase)
+  return this.prisma.transaction.create({
+    data: {
+      mobileNumber: data.mobileNumber,
+      amount: data.amount,
+      driver: { connect: { id: driver.id } }, // Use Driver.id
+      token,
+    },
+    include: {
+      driver: { select: { id: true, mobileNumber: true } },
+    },
+  });
+}
+
+async getDriverTransactions(userId: number, status?: 'USED' | 'UNUSED') {
+  // Validate driver (user with DRIVER role and corresponding Driver record)
+  const driver = await this.prisma.driver.findFirst({
+    where: { userId, deletedAt: null },
+    include: { user: { include: { role: true } } },
+  });
+  if (!driver || driver.user?.role.name !== 'DRIVER') {
+    throw new NotFoundException('Driver not found or has been deleted');
+  }
+
+  // Build where clause based on status
+  const where: any = {
+    driverId: driver.id, // Use Driver.id for Transaction.driverId
+    deletedAt: status === 'USED' ? { not: null } : status === 'UNUSED' ? null : undefined,
+  };
+
+  // Fetch transactions
+  return this.prisma.transaction.findMany({
+    where,
+    include: {
+      product: { select: { id: true, type: true, liters: true, amount: true } },
+      station: { select: { id: true, name: true } },
+      pumpAttendant: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async getProducts() {
+  return this.prisma.product.findMany({
+    where: { deletedAt: null },
+    distinct: ['type'],
+    orderBy: { type: 'asc' },
+    include: { station: true },
+  });
+}
+
+async getDriverMobileNumber(userId: number) {
+  const driver = await this.prisma.driver.findFirst({
+    where: { userId, deletedAt: null },
+    include: { user: { include: { role: true } } },
+  });
+  if (!driver || driver.user?.role.name !== 'DRIVER') {
+    throw new NotFoundException('Driver not found or has been deleted');
+  }
+  return driver.mobileNumber;
 }
 }

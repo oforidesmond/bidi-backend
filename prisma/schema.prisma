@@ -16,14 +16,14 @@ model User {
   cardUrl    String?   // Stores file path or URL for JPG, JPEG, PNG
   email       String    @unique
   password    String
-  role        Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  role        Role      @relation(fields: [roleId], references: [id])
   roleId      Int
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
-  omc         Omc?      @relation(fields: [omcId], references: [id], onDelete: Cascade)
+  omc         Omc?      @relation(fields: [omcId], references: [id])
   omcId       Int?
-  station     Station?  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station     Station?  @relation(fields: [stationId], references: [id])
   stationId   Int?
   transactions Transaction[]
   driver      Driver?   @relation("Driver")
@@ -63,7 +63,7 @@ model Station {
   town        String?
   managerName   String?
   managerContact String?
-  omc           Omc          @relation(fields: [omcId], references: [id], onDelete: Cascade)
+  omc           Omc          @relation(fields: [omcId], references: [id])
   omcId         Int
   dispensers    Dispenser[]
   users         User[]
@@ -77,8 +77,9 @@ model Station {
 model Dispenser {
   id          Int       @id @default(autoincrement())
   dispenserNumber String @unique
-  station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station     Station   @relation(fields: [stationId], references: [id])
   stationId   Int
+  transactions Transaction[]
   pumps       Pump[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -88,10 +89,11 @@ model Dispenser {
 model Pump {
   id          Int       @id @default(autoincrement())
   pumpNumber  String    @unique
-  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id])
   productId   Int
-  dispenser   Dispenser? @relation(fields: [dispenserId], references: [id], onDelete: Cascade)
+  dispenser   Dispenser? @relation(fields: [dispenserId], references: [id])
   dispenserId Int?
+  transactions Transaction[]
   attendants  User[]    @relation("PumpAttendantAssignment")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -103,7 +105,7 @@ model Product {
   type        String    // e.g., "Gasoline", "Diesel"
   liters      Float
   amount      Float
-  station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station     Station   @relation(fields: [stationId], references: [id])
   stationId   Int
   pumps       Pump[]
   transactions Transaction[]
@@ -114,7 +116,7 @@ model Product {
 
 model Driver {
   id             Int       @id @default(autoincrement())
-  user           User?      @relation("Driver", fields: [userId], references: [id], onDelete: Cascade)
+  user           User?      @relation("Driver", fields: [userId], references: [id])
   userId         Int?      @unique
   ghanaCard     String    @unique
   mobileNumber  String
@@ -130,16 +132,20 @@ model Driver {
 
 model Transaction {
   id             Int       @id @default(autoincrement())
-  mobileNumber   String
-  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productId      Int
-  liters         Float
-  amount         Float
-  pumpAttendant  User      @relation(fields: [pumpAttendantId], references: [id], onDelete: Cascade)
-  pumpAttendantId Int
-  station        Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  stationId      Int
-  driver         Driver?   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  mobileNumber   String?
+  product        Product?   @relation(fields: [productId], references: [id])
+  productId      Int?
+  liters         Float?
+  amount         Float?
+  pumpAttendant  User?      @relation(fields: [pumpAttendantId], references: [id])
+  pumpAttendantId Int?
+  station        Station?   @relation(fields: [stationId], references: [id])
+  stationId      Int?
+  dispenser     Dispenser? @relation(fields: [dispenserId], references: [id])
+  dispenserId    Int?
+  pump           Pump?      @relation(fields: [pumpId], references: [id])
+  pumpId         Int?
+  driver         Driver?   @relation(fields: [driverId], references: [id])
   driverId       Int?
   token          String?   @unique
   createdAt      DateTime  @default(now())

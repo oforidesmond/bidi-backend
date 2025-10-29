@@ -37,6 +37,7 @@ async function main() {
     { name: 'Oil Marketing Co 2' },
   ];
 
+
   const createdOmcs = [];
   for (const omc of omcs) {
     const existingOmc = await prisma.omc.findFirst({
@@ -54,46 +55,45 @@ async function main() {
     }
   }
 
-// Seed Stations
-const stations = [
-  {
-    name: 'Station A',
-    pumpNo: 'PUMP001', // was 'code'
-    region: 'Greater Accra', // replaced 'location'
-    district: 'Accra Metropolitan',
-    town: 'Accra',
-    managerName: 'John Doe',
-    managerContact: '1234567890',
-    omcId: createdOmcs[0].id,
-  },
-  {
-    name: 'Station B',
-    pumpNo: 'PUMP002',
-    region: 'Ashanti',
-    district: 'Kumasi Metropolitan',
-    town: 'Kumasi',
-    managerName: 'Jane Smith',
-    managerContact: '0987654321',
-    omcId: createdOmcs[1].id,
-  },
-];
+  // Seed Stations (schema no longer has pumpNo on Station)
+  const stations = [
+    {
+      name: 'Station A',
+      region: 'Greater Accra',
+      district: 'Accra Metropolitan',
+      town: 'Accra',
+      managerName: 'John Doe',
+      managerContact: '1234567890',
+      omcId: createdOmcs[0].id,
+    },
+    {
+      name: 'Station B',
+      region: 'Ashanti',
+      district: 'Kumasi Metropolitan',
+      town: 'Kumasi',
+      managerName: 'Jane Smith',
+      managerContact: '0987654321',
+      omcId: createdOmcs[1].id,
+    },
+  ];
 
-const createdStations = [];
-for (const station of stations) {
-  const existingStation = await prisma.station.findUnique({
-    where: { pumpNo: station.pumpNo }, // use pumpNo since it's unique
-  });
-  if (!existingStation) {
-    const newStation = await prisma.station.create({
-      data: station,
+  const createdStations = [];
+  for (const station of stations) {
+    const existingStation = await prisma.station.findFirst({
+      where: { name: station.name, omcId: station.omcId },
     });
-    createdStations.push(newStation);
-    console.log(`Created station: ${newStation.name}`);
-  } else {
-    createdStations.push(existingStation);
-    console.log(`Station already exists: ${existingStation.name}`);
+    if (!existingStation) {
+      const newStation = await prisma.station.create({
+        data: station,
+      });
+      createdStations.push(newStation);
+      console.log(`Created station: ${newStation.name}`);
+    } else {
+      createdStations.push(existingStation);
+      console.log(`Station already exists: ${existingStation.name}`);
+    }
   }
-}
+  
 
   // Seed Users
   const users = [
@@ -182,6 +182,12 @@ for (const station of stations) {
       amount: 12000.0,
       stationId: createdStations[0].id,
     },
+    {
+      type: 'Gasoline',
+      liters: 900.0,
+      amount: 13500.0,
+      stationId: createdStations[1].id,
+    },
   ];
 
   const createdProducts = [];
@@ -204,6 +210,66 @@ for (const station of stations) {
     }
   }
 
+  // Seed Dispensers (unique by dispenserNumber)
+  const dispensers = [
+    {
+      dispenserNumber: 'DISP-001',
+      stationId: createdStations[0].id,
+    },
+    {
+      dispenserNumber: 'DISP-002',
+      stationId: createdStations[1].id,
+    },
+  ];
+
+  const createdDispensers = [];
+  for (const disp of dispensers) {
+    const existingDisp = await prisma.dispenser.findUnique({
+      where: { dispenserNumber: disp.dispenserNumber },
+    });
+    if (!existingDisp) {
+      const newDisp = await prisma.dispenser.create({ data: disp });
+      createdDispensers.push(newDisp);
+      console.log(`Created dispenser: ${newDisp.dispenserNumber}`);
+    } else {
+      createdDispensers.push(existingDisp);
+      console.log(`Dispenser already exists: ${existingDisp.dispenserNumber}`);
+    }
+  }
+
+  // Seed Pumps (unique by pumpNumber) and associate to Products and Dispensers
+  // Choose a product per station to attach to a pump
+  const productByStation = (stationId) =>
+    createdProducts.find((p) => p.stationId === stationId) || null;
+  
+  const pumps = [
+    {
+      pumpNumber: 'PUMP-001A',
+      productId: productByStation(createdStations[0].id)?.id,
+      dispenserId: createdDispensers[0]?.id,
+    },
+    {
+      pumpNumber: 'PUMP-002A',
+      productId: productByStation(createdStations[1].id)?.id,
+      dispenserId: createdDispensers[1]?.id,
+    },
+  ].filter((p) => p.productId && p.dispenserId);
+
+  const createdPumps = [];
+  for (const pump of pumps) {
+    const existingPump = await prisma.pump.findUnique({
+      where: { pumpNumber: pump.pumpNumber },
+    });
+    if (!existingPump) {
+      const newPump = await prisma.pump.create({ data: pump });
+      createdPumps.push(newPump);
+      console.log(`Created pump: ${newPump.pumpNumber}`);
+    } else {
+      createdPumps.push(existingPump);
+      console.log(`Pump already exists: ${existingPump.pumpNumber}`);
+    }
+  }
+
   // Seed Transactions
   const transactions = [
     {
@@ -213,7 +279,7 @@ for (const station of stations) {
       amount: 750.0,
       pumpAttendantId: createdUsers.find((u) => u.email === 'pump_attendant@example.com').id,
       stationId: createdStations[0].id,
-      driverId: createdDrivers[0].id,
+      driverId: createdDrivers[0]?.id,
       token: 'TXN-001',
     },
   ];
@@ -230,6 +296,20 @@ for (const station of stations) {
     } else {
       console.log(`Transaction already exists: ${existingTransaction.token}`);
     }
+  }
+
+  // Optionally assign a pump attendant to a pump (many-to-many relation)
+  const pumpAttendantUser = createdUsers.find((u) => u.email === 'pump_attendant@example.com');
+  if (pumpAttendantUser && createdPumps[0]) {
+    await prisma.pump.update({
+      where: { id: createdPumps[0].id },
+      data: {
+        attendants: {
+          connect: [{ id: pumpAttendantUser.id }],
+        },
+      },
+    });
+    console.log(`Assigned attendant ${pumpAttendantUser.email} to pump ${createdPumps[0].pumpNumber}`);
   }
 
   console.log('Seeding completed successfully.');

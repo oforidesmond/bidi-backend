@@ -8,12 +8,14 @@ import { UserModule } from './user/user.module';
 import { use } from 'passport';
 import { UserController } from './user/user.controller';
 import { UserService } from './user/user.service';
+import { TransactionModule } from './transaction/transaction.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
     UserModule,
+    TransactionModule,
   ],
   controllers: [AppController, UserController],
   providers: [AppService, PrismaService, UserService],

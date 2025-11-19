@@ -25,9 +25,14 @@ model User {
   omcId       Int?
   station     Station?  @relation(fields: [stationId], references: [id])
   stationId   Int?
+  vehicleCount  Int?
+  companyName   String?
+  region        String?
+  district      String?
   transactions Transaction[]
-  driver      Driver?   @relation("Driver")
+  stationPriceChangedBy   StationProductPriceHistory[]
   pumps       Pump[]    @relation("PumpAttendantAssignment")
+  driverTransactions Transaction[] @relation("DriverTransactions")
 }
 
 model Role {
@@ -41,18 +46,34 @@ model Role {
 
 model Omc {
   id             Int       @id @default(autoincrement())
-  name           String
+  name           String     @unique
   location       String?
   logo           String?   // Stores file path or URL for JPG, JPEG, PNG
   contactPerson  String?
   contact        String?
   email          String?
-  products       Json?      // Stores array of { name: string, price: float }
+  catalog        ProductCatalog[]
   stations       Station[]
   users          User[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
+}
+
+model ProductCatalog {
+  id          Int       @id @default(autoincrement())
+  name        String    // e.g., "Gasoline", "Diesel"
+  omc         Omc       @relation(fields: [omcId], references: [id])
+  omcId       Int
+  pumps       Pump[]
+  transactions Transaction[]
+  defaultPrice Float?
+  stationPrices StationProductPrice[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([omcId, name], name: "omcId_name")
 }
 
 model Station {
@@ -68,10 +89,39 @@ model Station {
   dispensers    Dispenser[]
   users         User[]
   transactions  Transaction[]
-  products      Product[]    
+  stationProductPrices StationProductPrice[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
+
+  @@unique([name, omcId], name: "name_omcId")
+}
+
+model StationProductPrice {
+  id                Int               @id @default(autoincrement())
+  catalog   ProductCatalog    @relation(fields: [catalogId], references: [id])
+  catalogId Int
+  station          Station           @relation(fields: [stationId], references: [id])
+  stationId        Int
+  price            Float
+  effectiveFrom      DateTime          @default(now())
+  history            StationProductPriceHistory[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+
+  @@unique([catalogId, stationId])
+}
+
+model StationProductPriceHistory {
+   id                 Int               @id @default(autoincrement())
+  priceId            Int
+  priceRecord        StationProductPrice @relation(fields: [priceId], references: [id])
+
+  oldPrice           Float
+  changedAt          DateTime          @default(now())
+  changedById        Int?
+  changedBy          User?             @relation(fields: [changedById], references: [id])
 }
 
 model Dispenser {
@@ -89,8 +139,8 @@ model Dispenser {
 model Pump {
   id          Int       @id @default(autoincrement())
   pumpNumber  String    @unique
-  product     Product   @relation(fields: [productId], references: [id])
-  productId   Int
+  productCatalog ProductCatalog @relation(fields: [productCatalogId], references: [id])
+  productCatalogId   Int
   dispenser   Dispenser? @relation(fields: [dispenserId], references: [id])
   dispenserId Int?
   transactions Transaction[]
@@ -100,41 +150,10 @@ model Pump {
   deletedAt   DateTime?
 }
 
-model Product {
-  id          Int       @id @default(autoincrement())
-  type        String    // e.g., "Gasoline", "Diesel"
-  liters      Float
-  amount      Float
-  station     Station   @relation(fields: [stationId], references: [id])
-  stationId   Int
-  pumps       Pump[]
-  transactions Transaction[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-}
-
-model Driver {
-  id             Int       @id @default(autoincrement())
-  user           User?      @relation("Driver", fields: [userId], references: [id])
-  userId         Int?      @unique
-  ghanaCard     String    @unique
-  mobileNumber  String
-  vehicleCount  Int
-  region        String?
-  district      String?
-  companyName   String?
-  transactions  Transaction[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
-}
-
 model Transaction {
   id             Int       @id @default(autoincrement())
-  mobileNumber   String?
-  product        Product?   @relation(fields: [productId], references: [id])
-  productId      Int?
+  productCatalog  ProductCatalog? @relation(fields: [productCatalogId], references: [id])
+  productCatalogId      Int?
   liters         Float?
   amount         Float?
   pumpAttendant  User?      @relation(fields: [pumpAttendantId], references: [id])
@@ -145,7 +164,7 @@ model Transaction {
   dispenserId    Int?
   pump           Pump?      @relation(fields: [pumpId], references: [id])
   pumpId         Int?
-  driver         Driver?   @relation(fields: [driverId], references: [id])
+  driver         User?      @relation("DriverTransactions", fields: [driverId], references: [id])
   driverId       Int?
   token          String?   @unique
   createdAt      DateTime  @default(now())

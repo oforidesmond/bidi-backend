@@ -190,7 +190,6 @@ async getPumpsByStation(@Query('stationId', ParseIntPipe) stationId: number) {
     @Body()
     body: {
       amount: number;
-      mobileNumber: string;
     },
   ) {
     if (!req.user || !req.user.id) {
@@ -199,11 +198,8 @@ async getPumpsByStation(@Query('stationId', ParseIntPipe) stationId: number) {
     if (req.user.role !== 'DRIVER') {
       throw new ForbiddenException('User is not a driver');
     }
-    const driverId = req.user.id; // Use user.id as driverId
-    return this.userService.buyFuelToken(driverId, {
-      amount: body.amount,
-      mobileNumber: body.mobileNumber,
-    });
+   const driverId = req.user.id;
+  return this.userService.buyFuelToken(driverId, body.amount);
   }
 
 @Get('driver-tokens')
@@ -227,6 +223,13 @@ async getPumpsByStation(@Query('stationId', ParseIntPipe) stationId: number) {
   async getProducts() {
     return this.userService.getProducts();
   }
+
+  @Get('available-products')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('PUMP_ATTENDANT')
+async getAvailableProducts(@Request() req) {
+  return this.userService.getAvailableProducts(req.user.id);
+}
 
   @Get('driver-mobile-number')
   async getDriverMobileNumber(@Query('userId', ParseIntPipe) userId: number) {

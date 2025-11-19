@@ -6,57 +6,59 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Starting database seeding...');
 
-  // Seed Roles
-  const roles = [
-    { name: 'OMC_ADMIN' },
-    { name: 'STATION_MANAGER' },
-    { name: 'PUMP_ATTENDANT' },
-    { name: 'DRIVER' },
-  ];
-
+  // === 1. Seed Roles ===
+  const roleNames = ['OMC_ADMIN', 'STATION_MANAGER', 'PUMP_ATTENDANT', 'DRIVER'];
   const createdRoles = [];
-  for (const role of roles) {
-    const existingRole = await prisma.role.findUnique({
-      where: { name: role.name },
+
+  for (const name of roleNames) {
+    const role = await prisma.role.upsert({
+      where: { name },
+      update: {},
+      create: { name },
     });
-    if (!existingRole) {
-      const newRole = await prisma.role.create({
-        data: role,
-      });
-      createdRoles.push(newRole);
-      console.log(`Created role: ${newRole.name}`);
-    } else {
-      createdRoles.push(existingRole);
-      console.log(`Role already exists: ${existingRole.name}`);
-    }
+    createdRoles.push(role);
+    console.log(`Role: ${role.name}`);
   }
 
-  // Seed OMCs
-  const omcs = [
+  // === 2. Seed OMCs ===
+  const omcData = [
     { name: 'Oil Marketing Co 1' },
     { name: 'Oil Marketing Co 2' },
   ];
 
-
   const createdOmcs = [];
-  for (const omc of omcs) {
-    const existingOmc = await prisma.omc.findFirst({
-      where: { name: omc.name },
+  for (const data of omcData) {
+    const omc = await prisma.omc.upsert({
+      where: { name: data.name },
+      update: {},
+      create: data,
     });
-    if (!existingOmc) {
-      const newOmc = await prisma.omc.create({
-        data: omc,
-      });
-      createdOmcs.push(newOmc);
-      console.log(`Created OMC: ${newOmc.name}`);
-    } else {
-      createdOmcs.push(existingOmc);
-      console.log(`OMC already exists: ${existingOmc.name}`);
-    }
+    createdOmcs.push(omc);
+    console.log(`OMC: ${omc.name}`);
   }
 
-  // Seed Stations (schema no longer has pumpNo on Station)
-  const stations = [
+  // === 3. Seed Product Catalog ===
+  const catalogData = [
+    { omcId: createdOmcs[0].id, name: 'Diesel', defaultPrice: 25.00 },
+    { omcId: createdOmcs[0].id, name: 'Gasoline', defaultPrice: 28.50 },
+    { omcId: createdOmcs[1].id, name: 'Diesel', defaultPrice: 24.80 },
+  ];
+
+  const createdCatalogs = [];
+  for (const data of catalogData) {
+    const catalog = await prisma.productCatalog.upsert({
+      where: {
+        omcId_name: { omcId: data.omcId, name: data.name },
+      },
+      update: { defaultPrice: data.defaultPrice },
+      create: data,
+    });
+    createdCatalogs.push(catalog);
+    console.log(`Catalog: ${catalog.name} @ ${catalog.defaultPrice} GHS/L`);
+  }
+
+  // === 4. Seed Stations ===
+  const stationData = [
     {
       name: 'Station A',
       region: 'Greater Accra',
@@ -78,246 +80,178 @@ async function main() {
   ];
 
   const createdStations = [];
-  for (const station of stations) {
-    const existingStation = await prisma.station.findFirst({
-      where: { name: station.name, omcId: station.omcId },
+  for (const data of stationData) {
+    const station = await prisma.station.upsert({
+      where: { name_omcId: { name: data.name, omcId: data.omcId } },
+      update: {},
+      create: data,
     });
-    if (!existingStation) {
-      const newStation = await prisma.station.create({
-        data: station,
-      });
-      createdStations.push(newStation);
-      console.log(`Created station: ${newStation.name}`);
-    } else {
-      createdStations.push(existingStation);
-      console.log(`Station already exists: ${existingStation.name}`);
-    }
+    createdStations.push(station);
+    console.log(`Station: ${station.name}`);
   }
-  
 
-  // Seed Users
-  const users = [
+  // === 5. Seed Station-Specific Prices ===
+  const priceData = [
+    {
+      catalogId: createdCatalogs.find(c => c.name === 'Diesel' && c.omcId === createdOmcs[0].id)?.id,
+      stationId: createdStations[0].id,
+      price: 25.50,
+    },
+  ].filter(p => p.catalogId);
+
+  for (const data of priceData) {
+    await prisma.stationProductPrice.upsert({
+      where: { catalogId_stationId: { catalogId: data.catalogId, stationId: data.stationId } },
+      update: { price: data.price },
+      create: data,
+    });
+    const catalog = await prisma.productCatalog.findUnique({ where: { id: data.catalogId } });
+    console.log(`Price override: ${catalog?.name} @ ${data.price} GHS/L at ${createdStations.find(s => s.id === data.stationId)?.name}`);
+  }
+
+  // === 6. Seed Users ===
+  const userData = [
     {
       email: 'admin@example.com',
       password: await bcrypt.hash('password123', 10),
-      roleId: createdRoles.find((r) => r.name === 'OMC_ADMIN').id,
+      roleId: createdRoles.find(r => r.name === 'OMC_ADMIN').id,
       omcId: createdOmcs[0].id,
     },
     {
       email: 'station_manager@example.com',
       password: await bcrypt.hash('password123', 10),
-      roleId: createdRoles.find((r) => r.name === 'STATION_MANAGER').id,
+      roleId: createdRoles.find(r => r.name === 'STATION_MANAGER').id,
       stationId: createdStations[0].id,
     },
     {
-      email: 'pump_attendant@example.com',
+      email: 'attendant@example.com',
       password: await bcrypt.hash('password123', 10),
-      roleId: createdRoles.find((r) => r.name === 'PUMP_ATTENDANT').id,
+      roleId: createdRoles.find(r => r.name === 'PUMP_ATTENDANT').id,
       stationId: createdStations[0].id,
     },
     {
       email: 'driver@example.com',
       password: await bcrypt.hash('password123', 10),
-      roleId: createdRoles.find((r) => r.name === 'DRIVER').id,
+      roleId: createdRoles.find(r => r.name === 'DRIVER').id,
+      name: 'Driver One',
+      contact: '1234567890',
+      nationalId: 'GHA-123456789',
+      vehicleCount: 2,
+      companyName: 'Freight Co',
+      region: 'Greater Accra',
+      district: 'Accra Central',
     },
   ];
 
   const createdUsers = [];
-  for (const user of users) {
-    const existingUser = await prisma.user.findUnique({
-      where: { email: user.email },
+  for (const data of userData) {
+    const user = await prisma.user.upsert({
+      where: { email: data.email },
+      update: {},
+      create: data,
     });
-    if (!existingUser) {
-      const newUser = await prisma.user.create({
-        data: user,
-      });
-      createdUsers.push(newUser);
-      console.log(`Created user: ${newUser.email}`);
-    } else {
-      createdUsers.push(existingUser);
-      console.log(`User already exists: ${existingUser.email}`);
-    }
+    createdUsers.push(user);
+    console.log(`User: ${user.email} (${user.roleId === createdRoles.find(r => r.name === 'DRIVER')?.id ? 'Driver' : 'Staff'})`);
   }
 
-  // Seed Drivers
-  const drivers = [
-    {
-      ghanaCard: 'GHA-123456789',
-      mobileNumber: '1234567890',
-      vehicleCount: 2,
-      region: 'Greater Accra',
-      district: 'Accra Central',
-      companyName: 'Freight Co',
-    },
-  ];
-
-  const createdDrivers = [];
-  for (const driver of drivers) {
-    const existingDriver = await prisma.driver.findUnique({
-      where: { ghanaCard: driver.ghanaCard },
-    });
-    if (!existingDriver) {
-      const newDriver = await prisma.driver.create({
-        data: driver,
-      });
-      createdDrivers.push(newDriver);
-      console.log(`Created driver: ${newDriver.ghanaCard}`);
-    } else {
-      createdDrivers.push(existingDriver);
-      console.log(`Driver already exists: ${existingDriver.ghanaCard}`);
-    }
-  }
-
-  // Seed Products
-  const products = [
-    {
-      type: 'Gasoline',
-      liters: 1000.0,
-      amount: 15000.0,
-      stationId: createdStations[0].id,
-    },
-    {
-      type: 'Diesel',
-      liters: 800.0,
-      amount: 12000.0,
-      stationId: createdStations[0].id,
-    },
-    {
-      type: 'Gasoline',
-      liters: 900.0,
-      amount: 13500.0,
-      stationId: createdStations[1].id,
-    },
-  ];
-
-  const createdProducts = [];
-  for (const product of products) {
-    const existingProduct = await prisma.product.findFirst({
-      where: {
-        type: product.type,
-        stationId: product.stationId,
-      },
-    });
-    if (!existingProduct) {
-      const newProduct = await prisma.product.create({
-        data: product,
-      });
-      createdProducts.push(newProduct);
-      console.log(`Created product: ${newProduct.type}`);
-    } else {
-      createdProducts.push(existingProduct);
-      console.log(`Product already exists: ${existingProduct.type}`);
-    }
-  }
-
-  // Seed Dispensers (unique by dispenserNumber)
-  const dispensers = [
-    {
-      dispenserNumber: 'DISP-001',
-      stationId: createdStations[0].id,
-    },
-    {
-      dispenserNumber: 'DISP-002',
-      stationId: createdStations[1].id,
-    },
+  // === 7. Seed Dispensers ===
+  const dispenserData = [
+    { dispenserNumber: 'DISP-001', stationId: createdStations[0].id },
+    { dispenserNumber: 'DISP-002', stationId: createdStations[1].id },
   ];
 
   const createdDispensers = [];
-  for (const disp of dispensers) {
-    const existingDisp = await prisma.dispenser.findUnique({
-      where: { dispenserNumber: disp.dispenserNumber },
+  for (const data of dispenserData) {
+    const dispenser = await prisma.dispenser.upsert({
+      where: { dispenserNumber: data.dispenserNumber },
+      update: {},
+      create: data,
     });
-    if (!existingDisp) {
-      const newDisp = await prisma.dispenser.create({ data: disp });
-      createdDispensers.push(newDisp);
-      console.log(`Created dispenser: ${newDisp.dispenserNumber}`);
-    } else {
-      createdDispensers.push(existingDisp);
-      console.log(`Dispenser already exists: ${existingDisp.dispenserNumber}`);
-    }
+    createdDispensers.push(dispenser);
+    console.log(`Dispenser: ${dispenser.dispenserNumber}`);
   }
 
-  // Seed Pumps (unique by pumpNumber) and associate to Products and Dispensers
-  // Choose a product per station to attach to a pump
-  const productByStation = (stationId) =>
-    createdProducts.find((p) => p.stationId === stationId) || null;
-  
-  const pumps = [
+  // === 8. Seed Pumps ===
+  const pumpData = [
     {
       pumpNumber: 'PUMP-001A',
-      productId: productByStation(createdStations[0].id)?.id,
-      dispenserId: createdDispensers[0]?.id,
+      productCatalogId: createdCatalogs.find(c => c.name === 'Diesel' && c.omcId === createdOmcs[0].id)?.id,
+      dispenserId: createdDispensers[0].id,
     },
     {
       pumpNumber: 'PUMP-002A',
-      productId: productByStation(createdStations[1].id)?.id,
-      dispenserId: createdDispensers[1]?.id,
+      productCatalogId: createdCatalogs.find(c => c.name === 'Diesel' && c.omcId === createdOmcs[1].id)?.id,
+      dispenserId: createdDispensers[1].id,
     },
-  ].filter((p) => p.productId && p.dispenserId);
+  ].filter(p => p.productCatalogId);
 
   const createdPumps = [];
-  for (const pump of pumps) {
-    const existingPump = await prisma.pump.findUnique({
-      where: { pumpNumber: pump.pumpNumber },
+  for (const data of pumpData) {
+    const pump = await prisma.pump.upsert({
+      where: { pumpNumber: data.pumpNumber },
+      update: {},
+      create: data,
     });
-    if (!existingPump) {
-      const newPump = await prisma.pump.create({ data: pump });
-      createdPumps.push(newPump);
-      console.log(`Created pump: ${newPump.pumpNumber}`);
-    } else {
-      createdPumps.push(existingPump);
-      console.log(`Pump already exists: ${existingPump.pumpNumber}`);
-    }
+    createdPumps.push(pump);
+    console.log(`Pump: ${pump.pumpNumber}`);
   }
 
-  // Seed Transactions
-  const transactions = [
-    {
-      mobileNumber: '1234567890',
-      productId: createdProducts[0].id,
-      liters: 50.0,
-      amount: 750.0,
-      pumpAttendantId: createdUsers.find((u) => u.email === 'pump_attendant@example.com').id,
-      stationId: createdStations[0].id,
-      driverId: createdDrivers[0]?.id,
-      token: 'TXN-001',
-    },
-  ];
-
-  for (const transaction of transactions) {
-    const existingTransaction = await prisma.transaction.findUnique({
-      where: { token: transaction.token },
-    });
-    if (!existingTransaction) {
-      const newTransaction = await prisma.transaction.create({
-        data: transaction,
-      });
-      console.log(`Created transaction: ${newTransaction.token}`);
-    } else {
-      console.log(`Transaction already exists: ${existingTransaction.token}`);
-    }
-  }
-
-  // Optionally assign a pump attendant to a pump (many-to-many relation)
-  const pumpAttendantUser = createdUsers.find((u) => u.email === 'pump_attendant@example.com');
-  if (pumpAttendantUser && createdPumps[0]) {
+  // === 9. Assign Pump Attendant to Pump ===
+  const attendant = createdUsers.find(u => u.email === 'pump_attendant@example.com');
+  const pumpToAssign = createdPumps[0];
+  if (attendant && pumpToAssign) {
     await prisma.pump.update({
-      where: { id: createdPumps[0].id },
+      where: { id: pumpToAssign.id },
       data: {
         attendants: {
-          connect: [{ id: pumpAttendantUser.id }],
+          connect: { id: attendant.id },
         },
       },
     });
-    console.log(`Assigned attendant ${pumpAttendantUser.email} to pump ${createdPumps[0].pumpNumber}`);
+    console.log(`Assigned ${attendant.email} to ${pumpToAssign.pumpNumber}`);
   }
 
+  // === 10. Seed Transaction (Correct: Use driverId, not driver) ===
+  const driverUser = createdUsers.find(u => u.email === 'driver@example.com');
+  const dieselCatalog = createdCatalogs.find(c => c.name === 'Diesel' && c.omcId === createdOmcs[0].id);
+  const station = createdStations[0];
+  const dispenser = createdDispensers[0];
+  const pump = createdPumps[0];
+
+  if (!dieselCatalog || !driverUser || !attendant || !station || !dispenser || !pump) {
+    throw new Error('Missing required seed data for transaction');
+  }
+
+  const stationPrice = await prisma.stationProductPrice.findUnique({
+    where: { catalogId_stationId: { catalogId: dieselCatalog.id, stationId: station.id } },
+  });
+  const pricePerLiter = stationPrice?.price ?? dieselCatalog.defaultPrice;
+  const liters = 50.0;
+  const amount = liters * pricePerLiter;
+
+  await prisma.transaction.upsert({
+    where: { token: 'TXN-001' },
+    update: {},
+    create: {
+      token: 'TXN-001',
+      liters,
+      amount,
+      productCatalog: { connect: { id: dieselCatalog.id } },
+      pumpAttendant: { connect: { id: attendant.id } },
+      station: { connect: { id: station.id } },
+      dispenser: { connect: { id: dispenser.id } },
+      pump: { connect: { id: pump.id } },
+      driver: { connect: { id: driverUser.id } }
+    },
+  });
+
+  console.log(`Transaction: TXN-001 | ${liters}L × ${pricePerLiter} = ${amount} GHS`);
   console.log('Seeding completed successfully.');
 }
 
 main()
   .catch((e) => {
-    console.error('Error during seeding:', e);
+    console.error('Seeding failed:', e);
     process.exit(1);
   })
   .finally(async () => {

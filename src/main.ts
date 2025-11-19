@@ -14,7 +14,7 @@ async function bootstrap() {
        'http://localhost:5173', 
         'https://bidi-omc.vercel.app', 
         'http://localhost:3000',
-        'http://192.168.96.72:3000'
+        'http://192.168.247.72:3000'
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization',

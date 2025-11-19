@@ -55,7 +55,7 @@ async validate(@Req() req) {
     );
   }
 
- @Post('stations')
+ @Post('add-station')
 // @UseGuards(JwtAuthGuard, RolesGuard)
 // @Roles('OMC_ADMIN')
 async createStation(
@@ -68,6 +68,7 @@ async createStation(
     managerName?: string;
     managerContact?: string;
     dispensers?: { dispenserNumber: string; pumps: { productName: string; pumpNumber: string }[] }[];
+    stationProductPrices?: { catalogId: number; price: number; effectiveFrom?: string }[];
   },
 ) {
   return this.authService.createStation(
@@ -78,7 +79,8 @@ async createStation(
     body.town,
     body.managerName,
     body.managerContact,
-    body.dispensers
+    body.dispensers,
+    body.stationProductPrices
   );
 }
 
